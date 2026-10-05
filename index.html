@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏋️</text></svg>" />
+    <title>Gym Tycoon 3D</title>
+    <meta name="description" content="Spor salonunu sıfırdan kur, ekipman al, personel işe al, üyelerini mutlu et ve fitness imparatorluğunu büyüt!" />
+  </head>
+  <body>
+    <div id="canvas-wrap"></div>
+
+    <div id="hud" class="hidden">
+      <div id="topbar">
+        <div class="tb-left">
+          <div id="gym-badge">
+            <div class="lvl" id="lvl" title="Seviye">1</div>
+            <div class="gb-text">
+              <div id="gym-name">FitZone</div>
+              <div class="xpbar" title="Deneyim"><div id="xpfill"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="tb-center">
+          <div id="clock-box">
+            <div id="date"></div>
+            <div class="clockrow"><span id="clock">06:00</span><span id="openstate" class="open">AÇIK</span></div>
+          </div>
+          <div id="speed">
+            <button data-speed="0" title="Duraklat (Boşluk)">⏸</button>
+            <button data-speed="1" title="Normal hız (1)">▶</button>
+            <button data-speed="2" title="2x hız (2)">▶▶</button>
+            <button data-speed="4" title="4x hız (3)">▶▶▶</button>
+          </div>
+        </div>
+        <div class="tb-right">
+          <div class="stat money" title="Kasa"><span>💰</span><b id="money">$0</b></div>
+          <div class="stat" title="Üye sayısı"><span>👥</span><b id="members">0</b></div>
+          <div class="stat" title="İtibar"><span>⭐</span><b id="rep">2.5</b></div>
+        </div>
+      </div>
+
+      <div id="goals"></div>
+      <div id="status-widget"></div>
+      <div id="toasts"></div>
+      <div id="tutorial" class="hidden"></div>
+      <div id="panel" class="hidden"></div>
+      <div id="info" class="hidden"></div>
+      <div id="buildbar" class="hidden"></div>
+
+      <div id="toolbar">
+        <button id="tb-build" data-panel="build"><i>🏗️</i><span>İnşa</span></button>
+        <button id="tb-staff" data-panel="staff"><i>👔</i><span>Personel</span></button>
+        <button data-panel="pricing"><i>💳</i><span>Üyelik</span></button>
+        <button data-panel="marketing"><i>📣</i><span>Pazarlama</span></button>
+        <button data-panel="finance"><i>📊</i><span>Finans</span></button>
+        <button data-panel="expand"><i>🏢</i><span>Genişlet</span></button>
+        <button data-panel="reviews"><i>⭐</i><span>Yorumlar</span></button>
+        <button data-panel="goals"><i>🏆</i><span>Başarım</span></button>
+        <button data-panel="settings"><i>⚙️</i><span>Ayarlar</span></button>
+      </div>
+    </div>
+
+    <div id="modal-wrap" class="hidden"><div id="modal"></div></div>
+
+    <div id="menu" class="hidden">
+      <div class="menu-box">
+        <div class="logo"><span class="l1">GYM</span><span class="l2">TYCOON</span><span class="l3">3D</span></div>
+        <div class="tag">Salonunu sıfırdan kur · Üyelerini mutlu et · İmparatorluğunu büyüt</div>
+        <div id="menu-continue" class="hidden">
+          <button class="btn big green" id="btn-continue">▶ Devam Et</button>
+          <div class="muted small" id="save-info"></div>
+        </div>
+        <div class="newgame">
+          <label for="gym-input">Salonunun adı</label>
+          <input id="gym-input" maxlength="18" value="FitZone" autocomplete="off" />
+          <button class="btn big" id="btn-new">🏋️ Yeni Salon Aç</button>
+        </div>
+        <div class="howto">
+          <div>🏗️ Ekipman yerleştir</div><div>👔 Personel işe al</div><div>💳 Fiyatı belirle</div><div>📈 Büyü ve genişle</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="loading"><div class="spinner"></div><div>Salon hazırlanıyor...</div></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
