@@ -1,6 +1,20 @@
 import { G, pick, rand, randi, weightedPick, clamp } from './game.js';
 import { NAMES_M, NAMES_F, SURNAMES, MONTHS, MONTH_DAYS, WEEKDAYS, WEEKDAYS_SHORT, GOALS, STAFF_ROLES } from './data.js';
 
+// Grup dersi hayranı mı? Kadınlar ve esneklik/kilo hedefliler daha çok ders sever.
+export function randomClassPref(g, goal) {
+  let p = g === 'f' ? 0.48 : 0.2;
+  if (goal === 'wellness') p += 0.35;
+  if (goal === 'weightloss') p += 0.1;
+  if (goal === 'combat') p += 0.2;
+  if (Math.random() > p) return null;
+  const opts = goal === 'combat' ? [['kickbox', 3], ['hiit', 1]]
+    : goal === 'wellness' ? [['yoga', 3], ['pilates', 3], ['zumba', 1]]
+    : g === 'f' ? [['zumba', 3], ['pilates', 3], ['yoga', 2], ['hiit', 2], ['kickbox', 1]]
+    : [['hiit', 3], ['kickbox', 2], ['yoga', 1], ['zumba', 1]];
+  return weightedPick(opts);
+}
+
 const SAVE_KEY = 'gymtycoon_save_v1';
 export const SAVE_VERSION = 1;
 
@@ -49,6 +63,7 @@ export function createMemberProfile(day) {
     slot,
     freq: clamp(rand(0.25, 0.62) + (goal === 'muscle' ? 0.08 : 0), 0.2, 0.75),
     patience: rand(0.7, 1.35),
+    classPref: randomClassPref(g, goal),
     cares: { shower: Math.random() < 0.7, locker: Math.random() < 0.85 },
   };
 }
@@ -95,7 +110,7 @@ export function newState(gymName) {
     tutorial: 0,
     events: [],
     candidates: {},
-    stats: { visits: 0, income: 0, maxMembers: 0, newMembers: 0, use: {}, wait: {} },
+    stats: { visits: 0, income: 0, maxMembers: 0, newMembers: 0, use: {}, wait: {}, classes: {} },
     negDays: 0,
     seenLevel: 1,
     settings: { music: true, sfx: true },
@@ -159,6 +174,8 @@ export function loadSave() {
     s.prices.pt ??= 30;
     s.stats.use ??= {};
     s.stats.wait ??= {};
+    s.stats.classes ??= {};
+    for (const m of s.members) if (!('classPref' in m)) m.classPref = randomClassPref(m.look.g, m.goal);
     return s;
   } catch (e) {
     return null;

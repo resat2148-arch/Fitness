@@ -1,10 +1,11 @@
 import { G, rand, randi, pick, clamp } from '../game.js';
-import { ITEMS, GROUPS, GROUP_FALLBACK, GOALS, MAXD, MAXW, DOOR_I, ISSUES, STAFF_ROLES } from '../data.js';
+import { ITEMS, GROUPS, GROUP_FALLBACK, GOALS, MAXD, MAXW, DOOR_I, ISSUES, STAFF_ROLES, CLASSES, spotKind, isWet } from '../data.js';
 import { Character } from '../render/character.js';
 import { localToWorld, itemCenter, itemDims } from '../render/world.js';
 
 export const WALK_SPEED = 0.55; // karo / oyun dakikası
 const ENTER_TIME = 0.5;
+const ROUTE_SPEED = 1.1; // oda içinde yürüme (karo / oyun dakikası)
 const DOOR_X = (DOOR_I[0] + DOOR_I[1] + 1) / 2;
 
 // ---------- ortak yardımcılar ----------
@@ -77,15 +78,68 @@ function goTo(a, x, z, cb, failCb) {
   return true;
 }
 
-function freeSpots(it) {
+// kind verilirse sadece o türdeki yerler (ör. soyunma odasındaki duş)
+function freeSpots(it, kind) {
   const res = [];
   if (it.broken) return res;
-  const spots = ITEMS[it.type].spots || [];
+  const def = ITEMS[it.type];
+  const spots = def.spots || [];
   for (let k = 0; k < spots.length; k++) {
+    if (kind && spotKind(def, spots[k]) !== kind) continue;
     const r = it._spots[k];
     if (!r.user && !r.res) res.push(k);
   }
   return res;
+}
+
+// cinsiyete özel odalar (soyunma odası)
+const genderOk = (a, it) => !ITEMS[it.type].gender || ITEMS[it.type].gender === a.m.look.g;
+
+// ---------- oda içi rotalar ----------
+function viaPts(it, s) {
+  return (s.via || []).map(([x, z]) => localToWorld(it, x, z));
+}
+
+// pts boyunca sabit hızla yürüt; y geçişi girişte son, çıkışta ilk parçada olur
+function startRoute(a, pts, y0, y1, done, yAtEnd = true) {
+  const segLen = [];
+  let len = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const d = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+    segLen.push(d);
+    len += d;
+  }
+  a.route = { pts, segLen, len, t: 0, dur: Math.max(ENTER_TIME, len / ROUTE_SPEED), y0, y1, yAtEnd, done };
+  a.state = 'route';
+}
+
+function routeStep(a, dt) {
+  const r = a.route;
+  a.pose = 'walk';
+  if (!r) return;
+  r.t += dt;
+  const k = Math.min(1, r.t / r.dur);
+  if (r.segLen.length) {
+    let d = k * r.len;
+    let i = 0;
+    while (i < r.segLen.length - 1 && d > r.segLen[i]) {
+      d -= r.segLen[i];
+      i++;
+    }
+    const p0 = r.pts[i], p1 = r.pts[i + 1];
+    const f = r.segLen[i] > 0 ? Math.min(1, d / r.segLen[i]) : 1;
+    a.pos.x = p0.x + (p1.x - p0.x) * f;
+    a.pos.z = p0.z + (p1.z - p0.z) * f;
+    if (r.segLen[i] > 0.01) a.face = Math.atan2(p1.x - p0.x, p1.z - p0.z);
+    const last = r.segLen.length - 1;
+    if (r.yAtEnd) a.y = i === last ? r.y0 + (r.y1 - r.y0) * f : r.y0;
+    else a.y = i === 0 ? r.y0 + (r.y1 - r.y0) * f : r.y1;
+  }
+  if (k >= 1) {
+    a.route = null;
+    a.y = r.y1;
+    r.done();
+  }
 }
 
 function nearest(a, list, posFn) {
@@ -155,6 +209,11 @@ export function spawnCustomer(profile, walkin, opts = {}) {
     for (let k = 0; k < n; k++) ex.push({ type: 'exercise', group, pref: pick(GROUPS[group]) });
   }
   if (!ex.length) ex.push({ type: 'exercise', group: 'cardio', pref: 'treadmill' });
+  if (opts.cls) {
+    // derse gelen: ders + belki bir alet
+    ex.splice(randi(0, 1));
+    ex.unshift({ type: 'class', sid: opts.cls.sid, k: opts.cls.k });
+  }
   // karıştır (ısınma için kardiyo başta olabilir)
   ex.sort(() => Math.random() - 0.5);
   const cardioIdx = ex.findIndex(e => e.group === 'cardio');
@@ -162,6 +221,7 @@ export function spawnCustomer(profile, walkin, opts = {}) {
   a.tasks.push({ type: 'checkin' }, { type: 'locker', first: true }, ...ex, { type: 'shower' }, { type: 'locker', first: false }, { type: 'buy' }, { type: 'exit' });
   a.plannedEx = ex.length;
   if (a.vip) showBubble(a, '⭐', 9999);
+  if (opts.noClass) issue(a, 'noClass');
   G.sim.customers.push(a);
   // kapıya yürü
   if (!goTo(a, DOOR_X, MAXD + 0.6, () => nextTask(a))) nextTask(a);
@@ -183,8 +243,9 @@ function releaseSpot(a) {
     if (r.res === a) r.res = null;
     a.spot.it._busy = a.spot.it._spots.some(s => s.user);
     const m = a.spot.it._mesh;
+    const def = ITEMS[a.spot.it.type];
     if (m && m.userData.bar && !a.spot.it._busy) m.userData.bar.visible = true;
-    if (m && m.userData.water) m.userData.water.visible = false;
+    if (m && m.userData.water && spotKind(def, def.spots[a.spot.k]) === 'shower') m.userData.water.visible = false;
     a.spot = null;
   }
   if (a.ch) a.ch.setProp(null);
@@ -235,6 +296,7 @@ function nextTask(a) {
   if (!t) return startExit(a);
   a.task = t;
   if (t.type === 'checkin') return startCheckin(a);
+  if (t.type === 'class') return startClass(a, t);
   if (t.type === 'exit') return startExit(a);
   return startUse(a, t);
 }
@@ -364,7 +426,8 @@ function startUse(a, t) {
     dur = 1.2;
   } else {
     const kind = KIND_OF[t.type];
-    candidates = G.sim.itemsOfKind(kind);
+    t.kind = kind;
+    candidates = G.sim.itemsOfKind(kind).filter(it => genderOk(a, it));
     if (t.type === 'locker') {
       if (!candidates.length) {
         if (a.m.cares.locker && t.first) issue(a, 'noLocker');
@@ -419,7 +482,7 @@ function tryClaim(a, t, first) {
     for (const ty of t.alt) for (const it of G.sim.itemsByType.get(ty) || []) if (!cands.includes(it)) cands.push(it);
   }
   const free = [];
-  for (const it of cands) for (const k of freeSpots(it)) free.push({ it, k });
+  for (const it of cands) for (const k of freeSpots(it, t.kind)) free.push({ it, k });
   if (free.length) {
     const s = nearest(a, free, f => spotWorld(f.it, ITEMS[f.it.type].spots[f.k]));
     claimAndGo(a, s.it, s.k);
@@ -477,6 +540,7 @@ function statusFor(t, it) {
     case 'drink': return 'Su içiyor';
     case 'buy': return 'Alışveriş yapıyor';
     case 'rest': return 'Dinleniyor';
+    case 'class': return 'Grup dersine gidiyor';
   }
   return '';
 }
@@ -493,10 +557,89 @@ function enterSpot(a) {
   sp.it._busy = true;
   const s = ITEMS[sp.it.type].spots[sp.k];
   const sw = spotWorld(sp.it, s);
-  a.from = { x: a.pos.x, z: a.pos.z, y: a.y, face: a.face };
-  a.to = sw;
-  a.state = 'enter';
-  a.timer = 0;
+  const pts = [{ x: a.pos.x, z: a.pos.z }, ...viaPts(sp.it, s), { x: sw.x, z: sw.z }];
+  startRoute(a, pts, a.y, sw.y, () => onEntered(a, sw), true);
+}
+
+function onEntered(a, sw) {
+  if (!a.spot) return nextTask(a);
+  const it = a.spot.it;
+  const def = ITEMS[it.type];
+  const s = def.spots[a.spot.k];
+  a.state = 'use';
+  a.face = sw.face;
+  a.timer = a.task.type === 'exercise' ? rand(...def.dur) : a.task.dur;
+  a.useT = 0;
+  if (a.ch) a.ch.setProp(s.prop || null);
+  const m = it._mesh;
+  if (m && m.userData.bar && (s.pose === 'bench' || s.pose === 'squat')) m.userData.bar.visible = false;
+  if (m && m.userData.water && spotKind(def, s) === 'shower') m.userData.water.visible = true;
+}
+
+// ---------- grup dersi ----------
+function classFallback(a) {
+  // ders olmadıysa normal antrenmana dön
+  a.tasks.unshift({ type: 'exercise', group: 'cardio', pref: pick(GROUPS.cardio) });
+  return nextTask(a);
+}
+
+function startClass(a, t) {
+  const st = G.state.items.find(i => i.id === t.sid);
+  const c = st && G.sim.classInfo(st, t.k);
+  const now = G.state.minute;
+  if (!st || !c) return classFallback(a);
+  if (c.state === 'canceled') {
+    issue(a, 'classCanceled');
+    return classFallback(a);
+  }
+  if (c.state === 'done' || now > c.start + 12) return classFallback(a);
+  t.kind = 'class';
+  t.dur = 0;
+  t.cands = [st];
+  const free = freeSpots(st, 'class');
+  if (!free.length) {
+    issue(a, 'classFull');
+    return classFallback(a);
+  }
+  const k = nearest(a, free.map(k => ({ k })), f => spotWorld(st, ITEMS[st.type].spots[f.k])).k;
+  claimAndGo(a, st, k);
+}
+
+function updateClassUse(a, dt) {
+  const st = a.spot.it;
+  const c = G.sim.classInfo(st, a.task.k);
+  a.useT += dt;
+  if (!c || c.state === 'canceled') {
+    if (!a.issues.classCanceled) issue(a, 'classCanceled');
+    return finishUse(a);
+  }
+  const cl = CLASSES[c.type];
+  if (c.state === 'upcoming') {
+    a.pose = 'idle';
+    a.status = `${cl.name} dersinin başlamasını bekliyor`;
+    if (a.useT > 45) finishUse(a);
+    return;
+  }
+  if (c.state === 'running') {
+    a.pose = cl.pose;
+    a.status = `${cl.icon} ${cl.name} dersinde`;
+    a.sweat = Math.min(1, a.sweat + dt * 0.03);
+    a.energy = Math.max(0, a.energy - dt * 0.008);
+    a.thirst += dt * 0.006;
+    a.sampleT = (a.sampleT || 0) + dt;
+    if (a.sampleT >= 1) {
+      a.sampleT = 0;
+      G.sim.sampleEnv(a);
+    }
+    return;
+  }
+  if (!a.classDone) {
+    a.classDone = c.type;
+    a.exDone += 2;
+    G.sim.trackClass(c.type, st, a.task.k);
+    showBubble(a, '🙌', 2);
+  }
+  finishUse(a);
 }
 
 function finishUse(a) {
@@ -507,9 +650,14 @@ function finishUse(a) {
     const def = ITEMS[it.type];
     it.uses = (it.uses || 0) + 1;
     if (def.wear) G.sim.wearItem(it, def.wear * rand(0.5, 0.9));
-    if (def.water) G.sim.today().waterCost += def.water;
-    if (def.kind === 'shower' || def.kind === 'toilet') it.dirt = Math.min(1, (it.dirt || 0) + rand(0.06, 0.12));
-    if ((def.kind === 'shower' || def.kind === 'toilet') && (it.dirt || 0) > 0.65) issue(a, 'dirtyWc');
+    const us = def.spots[sp.k];
+    const uk = spotKind(def, us);
+    const water = us.water ?? def.water;
+    if (water) G.sim.today().waterCost += water;
+    if (uk === 'shower' || uk === 'toilet') {
+      it.dirt = Math.min(1, (it.dirt || 0) + rand(0.05, 0.1));
+      if (it.dirt > 0.65) issue(a, 'dirtyWc');
+    }
     if (t.type === 'exercise') {
       a.exDone++;
       G.sim.trackExercise(it.type);
@@ -525,19 +673,32 @@ function finishUse(a) {
     if (t.type === 'toilet') a.bladder = 0;
     if (t.type === 'drink') a.thirst = 0;
     if (t.type === 'rest') a.energy = Math.min(1, a.energy + 0.5);
-    // çıkış noktası
-    const s = def.spots[sp.k];
-    const sw = spotWorld(it, s);
-    a.from = { x: a.pos.x, z: a.pos.z, y: a.y, face: a.face };
-    a.to = { x: sw.ax, z: sw.az, y: 0, face: a.face };
-    a.state = 'exitSpot';
-    a.timer = 0;
+    // çıkış: oda içindeyse aynı yoldan kapıya
+    const sw = spotWorld(it, us);
+    const pts = [{ x: a.pos.x, z: a.pos.z }, ...viaPts(it, us).reverse(), { x: sw.ax, z: sw.az }];
+    startRoute(a, pts, a.y, 0, () => {
+      releaseSpot(a);
+      a.y = 0;
+      nextTask(a);
+    }, false);
     return;
   }
   nextTask(a);
 }
 
 function startExit(a) {
+  // oda içindeyken (duş, ders) önce kapıdan çık
+  if (a.spot && !a._exitRouted && (a.state === 'use' || a.state === 'route') && G.state.items.includes(a.spot.it)) {
+    const s = ITEMS[a.spot.it.type].spots[a.spot.k];
+    if (s.via) {
+      a._exitRouted = true;
+      a.tasks = [];
+      const sw = spotWorld(a.spot.it, s);
+      const pts = [{ x: a.pos.x, z: a.pos.z }, ...viaPts(a.spot.it, s).reverse(), { x: sw.ax, z: sw.az }];
+      startRoute(a, pts, a.y, 0, () => startExit(a), false);
+      return;
+    }
+  }
   releaseSpot(a);
   leaveQueue(a);
   a.y = 0;
@@ -591,35 +752,14 @@ export function updateCustomer(a, dt) {
     case 'queue':
       updateQueue(a, dt);
       break;
-    case 'enter':
-    case 'exitSpot': {
-      a.timer += dt;
-      const k = Math.min(1, a.timer / ENTER_TIME);
-      a.pos.x = a.from.x + (a.to.x - a.from.x) * k;
-      a.pos.z = a.from.z + (a.to.z - a.from.z) * k;
-      a.y = a.from.y + (a.to.y - a.from.y) * k;
-      a.pose = 'walk';
-      if (a.state === 'enter') {
-        a.face = Math.atan2(a.to.x - a.from.x, a.to.z - a.from.z);
-        if (k >= 1) {
-          a.state = 'use';
-          a.face = a.to.face;
-          a.timer = a.task.type === 'exercise' ? rand(...ITEMS[a.spot.it.type].dur) : a.task.dur;
-          a.useT = 0;
-          const s = ITEMS[a.spot.it.type].spots[a.spot.k];
-          if (a.ch) a.ch.setProp(s.prop || null);
-          const m = a.spot.it._mesh;
-          if (m && m.userData.bar && (s.pose === 'bench' || s.pose === 'squat')) m.userData.bar.visible = false;
-          if (m && m.userData.water) m.userData.water.visible = true;
-        }
-      } else if (k >= 1) {
-        releaseSpot(a);
-        a.y = 0;
-        nextTask(a);
-      }
+    case 'route':
+      routeStep(a, dt);
       break;
-    }
     case 'use': {
+      if (a.task.type === 'class') {
+        updateClassUse(a, dt);
+        break;
+      }
       const s = ITEMS[a.spot.it.type].spots[a.spot.k];
       a.pose = s.pose;
       a.timer -= dt;
@@ -729,6 +869,8 @@ export function staffLeave(a) {
   if (a.target && a.target._tech === a) a.target._tech = null;
   if (a.coachee) a.coachee._coach = null;
   a.coachee = null;
+  if (a.studio && a.studio._instructor === a) a.studio._instructor = null;
+  a.studio = null;
   if (a.ch) a.ch.setProp(a.role === 'trainer' ? 'clipboard' : null);
   a.y = 0;
   a.status = 'Eve gidiyor';
@@ -746,17 +888,8 @@ export function updateStaff(a, dt) {
     moveStep(a, dt);
     return;
   }
-  if (a.state === 'enter') {
-    a.timer += dt;
-    const k = Math.min(1, a.timer / ENTER_TIME);
-    a.pos.x = a.from.x + (a.to.x - a.from.x) * k;
-    a.pos.z = a.from.z + (a.to.z - a.from.z) * k;
-    a.face = a.to.face;
-    a.pose = 'walk';
-    if (k >= 1) {
-      a.state = a.afterEnter;
-      a.timer = 0;
-    }
+  if (a.state === 'route') {
+    routeStep(a, dt);
     return;
   }
   switch (a.role) {
@@ -764,6 +897,7 @@ export function updateStaff(a, dt) {
     case 'cleaner': return updateCleaner(a, dt, sk);
     case 'technician': return updateTechnician(a, dt, sk);
     case 'trainer': return updateTrainer(a, dt, sk);
+    case 'instructor': return updateInstructor(a, dt, sk);
   }
 }
 
@@ -790,13 +924,12 @@ function updateReceptionist(a, dt) {
   a.desk = desk;
   const ss = ITEMS.reception.staffSpot;
   const sw = spotWorld(desk, ss);
-  const go = () => {
-    a.from = { x: a.pos.x, z: a.pos.z };
-    a.to = sw;
-    a.state = 'enter';
-    a.afterEnter = 'work';
-    a.timer = 0;
-  };
+  const go = () =>
+    startRoute(a, [{ x: a.pos.x, z: a.pos.z }, { x: sw.x, z: sw.z }], 0, 0, () => {
+      a.state = 'work';
+      a.face = sw.face;
+      a.timer = 0;
+    });
   a.status = 'Masasına gidiyor';
   if (!goTo(a, sw.ax, sw.az, go)) {
     // erişim noktası kapalıysa ışınlan
@@ -828,7 +961,7 @@ function updateCleaner(a, dt, sk) {
     return;
   }
   // kirli ıslak alan?
-  const wet = G.state.items.filter(it => (ITEMS[it.type].kind === 'shower' || ITEMS[it.type].kind === 'toilet') && (it.dirt || 0) > 0.4 && !it._spots.some(s => s.user));
+  const wet = G.state.items.filter(it => isWet(ITEMS[it.type]) && (it.dirt || 0) > 0.4 && (ITEMS[it.type].room || !it._spots.some(s => s.user)));
   if (wet.length) {
     const it = wet.sort((x, y) => y.dirt - x.dirt)[0];
     const sw = spotWorld(it, ITEMS[it.type].spots[0]);
@@ -982,6 +1115,58 @@ function updateTrainer(a, dt, sk) {
   }
   a.status = 'Salonu gözlemliyor';
   a.timer = 0;
+  staffIdle(a, dt);
+}
+
+// Grup eğitmeni: yaklaşan dersi olan stüdyoya gider, dersi verir, sonra çıkar
+function updateInstructor(a, dt) {
+  const ss = ITEMS.studio.staffSpot;
+  if (a.state === 'teach') {
+    const st = a.studio;
+    if (!st || !G.state.items.includes(st)) {
+      a.studio = null;
+      a.state = 'idle';
+      a.y = 0;
+      return;
+    }
+    const sw = spotWorld(st, ss);
+    const c = G.sim.classNow(st, 20);
+    if (c) {
+      a.face = sw.face;
+      a.pose = c.state === 'running' ? CLASSES[c.type].pose : 'idle';
+      a.status = c.state === 'running' ? `${CLASSES[c.type].icon} ${CLASSES[c.type].name} dersi veriyor` : `${CLASSES[c.type].name} dersine hazırlanıyor`;
+      return;
+    }
+    st._instructor = null;
+    a.studio = null;
+    a.status = 'Dersi bitirdi';
+    startRoute(a, [{ x: a.pos.x, z: a.pos.z }, ...viaPts(st, ss).reverse(), { x: sw.ax, z: sw.az }], a.y, 0, () => {
+      a.state = 'idle';
+      a.y = 0;
+      a.timer = rand(1, 3);
+    }, false);
+    return;
+  }
+  const st = G.sim.itemsOfKind('studio').find(x => (!x._instructor || x._instructor === a) && G.sim.classNow(x, 20));
+  if (st) {
+    st._instructor = a;
+    a.studio = st;
+    const sw = spotWorld(st, ss);
+    a.status = 'Derse gidiyor';
+    const enter = () =>
+      startRoute(a, [{ x: a.pos.x, z: a.pos.z }, ...viaPts(st, ss), { x: sw.x, z: sw.z }], 0, sw.y, () => {
+        a.state = 'teach';
+        a.face = sw.face;
+      });
+    if (!goTo(a, sw.ax, sw.az, enter)) {
+      a.pos.x = sw.x;
+      a.pos.z = sw.z;
+      a.y = sw.y;
+      a.state = 'teach';
+    }
+    return;
+  }
+  a.status = 'Sonraki dersi bekliyor';
   staffIdle(a, dt);
 }
 

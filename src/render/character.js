@@ -451,6 +451,31 @@ const POSES = {
     c.shL.rotation.z = -0.2;
     c.shR.rotation.z = 0.2;
   },
+  dance(c, t) {
+    const p = t * 5.5;
+    const s = S(p);
+    c.body.position.x = s * 0.1;
+    c.body.position.y = STAND_Y - 0.03 + Math.abs(C(p)) * 0.05;
+    c.spine.rotation.z = -s * 0.16;
+    c.spine.rotation.y = S(p * 0.5) * 0.3;
+    c.hipL.rotation.x = -Math.max(0, s) * 0.5;
+    c.knL.rotation.x = Math.max(0, s) * 0.8;
+    c.hipR.rotation.x = -Math.max(0, -s) * 0.5;
+    c.knR.rotation.x = Math.max(0, -s) * 0.8;
+    c.shL.rotation.z = 1.3 + S(p * 2) * 0.6;
+    c.shR.rotation.z = -(1.3 + C(p * 2) * 0.6);
+    c.elL.rotation.x = -0.5;
+    c.elR.rotation.x = -0.5;
+    c.head.rotation.z = s * 0.15;
+  },
+  jacks(c, t) {
+    const k = cyc(t, 7);
+    c.shL.rotation.z = 0.15 + k * 2.75;
+    c.shR.rotation.z = -(0.15 + k * 2.75);
+    c.hipL.rotation.z = k * 0.32;
+    c.hipR.rotation.z = -k * 0.32;
+    c.body.position.y = STAND_Y + k * 0.1;
+  },
   locker(c, t) {
     arms(c, -1.1 + S(t * 3) * 0.15, -1.0 - S(t * 3) * 0.15, -0.7, -0.6);
     c.head.rotation.x = 0.1;

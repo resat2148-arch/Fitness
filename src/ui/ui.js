@@ -1,7 +1,7 @@
 import { G, fmtMoney, fmtTime, clamp } from '../game.js';
 import {
   ITEMS, CATEGORIES, STAFF_ROLES, MARKETING, EXPANSIONS, LOANS, ISSUES, EVENTS, MILESTONES, GOALS,
-  xpForLevel, RENT_PER_TILE, MAXD, MAXW, OPEN_MIN, CLOSE_MIN, GROUP_NAMES,
+  xpForLevel, RENT_PER_TILE, MAXD, MAXW, OPEN_MIN, CLOSE_MIN, GROUP_NAMES, CLASSES, CLASS_SLOTS, isWet, spotKind,
 } from '../data.js';
 import { dateInfo, save, deleteSave } from '../state.js';
 import { makeGhost } from '../render/models.js';
@@ -32,9 +32,9 @@ const TUTORIAL = [
     done: s => s.items.filter(i => ['cardio', 'strength', 'functional'].includes(ITEMS[i.type].cat)).length >= 3,
   },
   {
-    text: 'Temel ihtiyaçlar! <b>Tesis</b> sekmesinden bir <b>Soyunma Dolabı</b> ve bir <b>Tuvalet Kabini</b> koy. Olmazsa müşteriler çok şikayet eder.',
+    text: 'Temel ihtiyaçlar! <b>Tesis</b> sekmesinden bir <b>Erkek</b> ve bir <b>Kadın Soyunma Odası</b> kur. İçlerinde dolap, duş ve tuvalet var; olmazsa müşteriler çok şikayet eder.',
     target: 'tb-build',
-    done: s => s.items.some(i => i.type === 'locker') && s.items.some(i => i.type === 'toilet'),
+    done: s => (s.items.some(i => i.type === 'lockerroom_m') && s.items.some(i => i.type === 'lockerroom_f')) || s.items.some(i => i.type === 'locker'),
   },
   {
     text: 'Her şey hazır! Üstteki <b>▶</b> butonuyla zamanı başlat ve kapılarını aç! 🚪',
@@ -317,12 +317,13 @@ export class UI {
   panelBuild() {
     const s = G.state;
     const tabs = CATEGORIES.map(c => `<button class="tab ${c.id === this.buildCat ? 'on' : ''}" data-act="cat" data-cat="${c.id}">${c.icon} ${c.name}</button>`).join('');
-    const items = Object.entries(ITEMS).filter(([, d]) => d.cat === this.buildCat).sort((a, b) => a[1].level - b[1].level || a[1].price - b[1].price);
+    const items = Object.entries(ITEMS).filter(([, d]) => d.cat === this.buildCat && !d.hidden).sort((a, b) => a[1].level - b[1].level || a[1].price - b[1].price);
     const cards = items.map(([type, d]) => {
       const locked = d.level > s.level;
       const price = G.sim.priceOf(type);
       const owned = (G.sim.itemsByType.get(type) || []).length;
       const tags = [];
+      if (d.room) tags.push('🚪 Oda');
       if (d.spots && d.cat !== 'decor') tags.push(`👥 ${d.spots.length}`);
       if (d.power) tags.push(`⚡ ${d.power}kW`);
       if (d.appeal && d.cat === 'decor') tags.push(`✨ +${d.appeal}`);
@@ -629,7 +630,31 @@ export class UI {
       <div class="hint">Toplam <b>${totalUse}</b> egzersiz. Çok bekleme olan aletten bir tane daha almak memnuniyeti artırır; az kullanılanı satıp yerine popüler olanı koyabilirsin.</div>
       <div class="sect"><h3>En çok kullanılan aletler</h3>${list}</div>
       ${missHtml}
+      ${this.classStatsHtml(period)}
       <div class="sect"><h3>Tek tek en yoğun aletler <span class="muted">(tüm zamanlar)</span></h3>${itemsHtml}</div>`];
+  }
+
+  classStatsHtml(period) {
+    const s = G.state;
+    let data = {};
+    if (period === 'all') data = { ...(s.stats.classes || {}) };
+    else {
+      data = { ...(s.today.classAttend || {}) };
+      if (period === 'week') for (const h of s.history.slice(-6)) for (const [k, n] of Object.entries(h.classes || {})) data[k] = (data[k] || 0) + n;
+    }
+    const rows = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    if (!rows.length && !G.sim.itemsOfKind('studio').length) return '';
+    const max = Math.max(1, ...rows.map(r => r[1]));
+    const fans = {};
+    for (const m of s.members) if (m.classPref) fans[m.classPref] = (fans[m.classPref] || 0) + 1;
+    const body = Object.keys(CLASSES).map(k => {
+      const n = data[k] || 0;
+      return `<div class="urow" title="${CLASSES[k].name}: ${n} katılım · ${fans[k] || 0} üye bu dersi seviyor">
+        <span class="urank" style="font-size:18px">${CLASSES[k].icon}</span>
+        <div class="umain"><div class="utop"><b>${CLASSES[k].name}</b><span class="muted small">${fans[k] || 0} hayran üye</span><span class="uval">${n}</span></div>
+        <div class="ubar"><div style="width:${(n / max) * 100}%"></div></div></div></div>`;
+    }).join('');
+    return `<div class="sect"><h3>🧘 Grup dersi katılımı</h3>${body}<div class="hint">Hayran üye sayısı yüksek ama katılımı düşük bir ders varsa, onu stüdyonun ders programına ekle.</div></div>`;
   }
 
   panelGoals() {
@@ -726,6 +751,21 @@ export class UI {
         break;
       // bilgi paneli
       case 'move': if (this.selected && this.selected.item) this.startMove(this.selected.item); break;
+      case 'cycleclass': {
+        const it = this.selected && this.selected.item;
+        if (!it) return;
+        const order = [null, ...Object.keys(CLASSES)];
+        const k = +d.k;
+        const c = G.sim.classInfo(it, k);
+        if (c && c.state !== 'upcoming') {
+          this.notify('Bu ders bugün başladı; değişiklik yarın geçerli olur.', 'info');
+        }
+        const cur = (it.classes || [])[k] || null;
+        G.sim.setClass(it, k, order[(order.indexOf(cur) + 1) % order.length]);
+        G.audio.play('click');
+        this.renderInfo(true);
+        break;
+      }
       case 'movepick': this.moveKey(); break;
       case 'sell': {
         const it = this.selected && this.selected.item;
@@ -1031,8 +1071,17 @@ export class UI {
         html += `<div class="kv"><span>Durum</span><b class="${it.broken ? 'bad' : it.cond < 40 ? 'warn' : ''}">${it.broken ? 'BOZUK 🔧' : Math.round(it.cond) + '%'}</b></div>${bar(it.cond / 100, it.cond < 40 ? 'red' : '')}
           <div class="kv"><span>Toplam kullanım</span><b>${it.uses}</b></div>`;
       }
-      if (d.kind === 'shower' || d.kind === 'toilet') html += `<div class="kv"><span>Hijyen</span><b>${Math.round((1 - (it.dirt || 0)) * 100)}%</b></div>`;
-      if (d.spots && d.cat !== 'decor') html += `<div class="kv"><span>Kullanan</span><b>${users.length ? esc(users.join(', ')) : 'Boş'}</b></div>`;
+      if (isWet(d)) html += `<div class="kv"><span>Hijyen</span><b class="${(it.dirt || 0) > 0.6 ? 'bad' : ''}">${Math.round((1 - (it.dirt || 0)) * 100)}%</b></div>`;
+      if (d.kind === 'lockerroom') {
+        const busy = k => it._spots.filter((r, i) => r.user && spotKind(d, d.spots[i]) === k).length;
+        const cnt = k => d.spots.filter(sp => spotKind(d, sp) === k).length;
+        html += `<div class="kv"><span>Kimler kullanır</span><b>${d.gender === 'm' ? '♂ Erkek üyeler' : '♀ Kadın üyeler'}</b></div>
+          <div class="kv"><span>🔐 Dolap yerleri</span><b>${busy('locker')} / ${cnt('locker')} dolu</b></div>
+          <div class="kv"><span>🚿 Duş</span><b>${busy('shower') ? 'Kullanımda' : 'Boş'}</b></div>
+          <div class="kv"><span>🚽 Tuvalet</span><b>${busy('toilet') ? 'Kullanımda' : 'Boş'}</b></div>`;
+      }
+      if (d.kind === 'studio') html += this.studioInfo(it);
+      if (d.spots && d.cat !== 'decor' && !d.room) html += `<div class="kv"><span>Kullanan</span><b>${users.length ? esc(users.join(', ')) : 'Boş'}</b></div>`;
       if (d.kind === 'reception') html += `<div class="kv"><span>Sıradaki</span><b>${it._queue.length} kişi</b></div><div class="kv"><span>Görevli</span><b>${it._staff ? esc(it._staff.data.name) : '<span class="bad">Yok</span>'}</b></div>`;
       if (d.appeal && d.cat === 'decor') html += `<div class="kv"><span>Atmosfer</span><b>+${d.appeal} (${d.radius} m)</b></div>`;
       if (d.cooling) html += `<div class="kv"><span>Soğutma</span><b>${d.cooling}°C / 80 m²</b></div>`;
@@ -1070,6 +1119,24 @@ export class UI {
       this._infoHtml = html;
       $('info').innerHTML = html;
     }
+  }
+
+  studioInfo(it) {
+    const ins = it._instructor;
+    const hasIns = G.state.staff.some(x => x.role === 'instructor');
+    const now = G.sim.classNow(it, 0);
+    const inRoom = it._spots.filter(r => r.user).length;
+    let html = `<div class="kv"><span>Eğitmen</span><b>${ins ? esc(ins.data.name) : hasIns ? 'Derse gelmedi' : '<span class="bad">Grup Eğitmeni yok</span>'}</b></div>`;
+    if (now && now.state === 'running') html += `<div class="kv"><span>Şu an</span><b class="good">${CLASSES[now.type].icon} ${CLASSES[now.type].name} · ${inRoom}/${it._spots.length} kişi</b></div>`;
+    html += `<div class="sect" style="margin:8px 0 0"><h3>📅 Ders programı <span class="muted small">(tıkla: dersi değiştir)</span></h3>`;
+    CLASS_SLOTS.forEach((t, k) => {
+      const type = it.classes && it.classes[k];
+      const c = G.sim.classInfo(it, k);
+      const st = !c ? '' : c.state === 'running' ? '<span class="chip good">Sürüyor</span>' : c.state === 'done' ? `<span class="chip">Bitti · ${c.attend || 0} kişi</span>` : c.state === 'canceled' ? '<span class="chip bad">İptal</span>' : '';
+      html += `<div class="kv"><span>${fmtTime(t)}</span><span>${st}</span><button class="btn small ${type ? '' : 'off'}" data-act="cycleclass" data-k="${k}">${type ? CLASSES[type].icon + ' ' + CLASSES[type].name : '— Ders yok'}</button></div>`;
+    });
+    html += `</div><div class="hint">Ders başına 7 kişi. Derse gelen üyeler çok memnun kalır; dolu ya da iptal dersler şikayet getirir. Değişiklikler başlamamış derslere hemen uygulanır.</div>`;
+    return html;
   }
 
   // ===================== MODALLAR =====================
@@ -1116,7 +1183,7 @@ export class UI {
       ${warn}
       <div class="sect two"><div><h3>Gelirler</h3>${inc}</div><div><h3>Giderler</h3>${exp}</div></div>
       <div class="sect two"><div><h3>Şikayetler</h3>${comp}</div><div><h3>Bugünün yorumları</h3>${rev || '<div class="muted">Yorum bırakılmadı</div>'}</div></div>
-      <div class="muted small">🧹 Temizlik %${r.clean}${popular ? ` · 🔥 En popüler: ${popular}` : ''}${r.renewed ? ` · 🔁 ${r.renewed} üyelik yenilendi` : ''}${r.turnedAway ? ` · 🚪 ${r.turnedAway} kişi geri döndü` : ''}${r.lostNames.length ? ` · 👋 Ayrılanlar: ${r.lostNames.map(esc).join(', ')}` : ''}</div>
+      <div class="muted small">🧹 Temizlik %${r.clean}${popular ? ` · 🔥 En popüler: ${popular}` : ''}${r.renewed ? ` · 🔁 ${r.renewed} üyelik yenilendi` : ''}${r.turnedAway ? ` · 🚪 ${r.turnedAway} kişi geri döndü` : ''}${r.classRuns || r.classCanceled ? ` · 🧘 Grup dersleri: ${r.classRuns} ders, ${r.classAttend} katılımcı${r.classCanceled ? `, ${r.classCanceled} iptal` : ''}` : ''}${r.lostNames.length ? ` · 👋 Ayrılanlar: ${r.lostNames.map(esc).join(', ')}` : ''}</div>
       <div class="row center">
         ${G.sdk.adsAvailable ? `<button class="btn big purple" data-act="adbonus" data-amount="${bonus}">📺 Reklam izle: +${fmtMoney(bonus)}</button>` : ''}
         <button class="btn big green" data-act="nextday">☀️ Sonraki Gün</button>

@@ -2,6 +2,7 @@ import { G, rand, randi, pick, clamp, gauss, weightedPick, fmtMoney } from '../g
 import {
   ITEMS, MAXW, MAXD, DOOR_I, OPEN_MIN, LAST_ARRIVAL_MIN, CLOSE_MIN, EXPANSIONS, RENT_PER_TILE, ELECTRIC_PRICE,
   MARKETING, LOANS, STAFF_ROLES, EVENTS, MILESTONES, ISSUES, PRAISES, xpForLevel, GROUPS,
+  CLASSES, CLASS_LEN, CLASS_SLOTS, CLASS_DEFAULT, hasKind, isWet,
 } from '../data.js';
 import { Grid } from './grid.js';
 import { localToWorld, itemDims, itemCenter } from '../render/world.js';
@@ -152,7 +153,7 @@ export class Sim {
 
   itemsOfKind(kind) {
     const out = [];
-    for (const it of G.state.items) if (ITEMS[it.type].kind === kind) out.push(it);
+    for (const it of G.state.items) if (hasKind(ITEMS[it.type], kind)) out.push(it);
     return out;
   }
 
@@ -212,6 +213,7 @@ export class Sim {
       return null;
     }
     const it = { id: G.state.nextId++, type, i, j, rot, cond: 100, broken: false, uses: 0, dirt: 0 };
+    if (ITEMS[type].kind === 'studio') it.classes = CLASS_DEFAULT.slice();
     G.state.items.push(it);
     this._register(it);
     this.recompute();
@@ -248,8 +250,10 @@ export class Sim {
       else if (a.desk === it) kickCustomer(a);
     }
     for (const a of this.staffAgents) {
-      if (a.desk === it || a.target === it || a.cleanItem === it) {
+      if (a.desk === it || a.target === it || a.cleanItem === it || a.studio === it) {
         if (a.desk === it) it._staff = null;
+        if (a.studio === it) it._instructor = null;
+        a.studio = null;
         a.desk = null;
         a.target = null;
         a.cleanItem = null;
@@ -374,8 +378,7 @@ export class Sim {
       }
     let wet = 0, wn = 0;
     for (const it of G.state.items) {
-      const k = ITEMS[it.type].kind;
-      if (k === 'shower' || k === 'toilet') {
+      if (isWet(ITEMS[it.type])) {
         wet += it.dirt || 0;
         wn++;
       }
@@ -442,6 +445,88 @@ export class Sim {
     e.n++;
   }
 
+  // ---------------- grup dersleri ----------------
+  // Bugünkü aktif ders saatleri: [{ sid, k, t, type }]
+  classSlots() {
+    const out = [];
+    for (const it of this.itemsOfKind('studio')) {
+      (it.classes || []).forEach((type, k) => {
+        if (type && CLASS_SLOTS[k] > G.state.minute - 5) out.push({ sid: it.id, k, t: CLASS_SLOTS[k], type });
+      });
+    }
+    return out;
+  }
+
+  // k numaralı dersin bugünkü durumu: upcoming | running | done | canceled
+  classInfo(st, k) {
+    const start = CLASS_SLOTS[k];
+    const c = st._cls && st._cls[k];
+    if (c) return { ...c, start, end: start + CLASS_LEN };
+    const type = st.classes && st.classes[k];
+    if (!type) return null;
+    return { state: 'upcoming', type, start, end: start + CLASS_LEN };
+  }
+
+  // şu an süren ya da `ahead` dakika içinde başlayacak ders
+  classNow(st, ahead = 15) {
+    const now = G.state.minute;
+    for (let k = 0; k < CLASS_SLOTS.length; k++) {
+      const c = this.classInfo(st, k);
+      if (!c) continue;
+      if (c.state === 'running') return { ...c, k };
+      if (c.state === 'upcoming' && c.start - now <= ahead && now <= c.start + 12) return { ...c, k };
+    }
+    return null;
+  }
+
+  updateClasses() {
+    const s = G.state;
+    const now = s.minute;
+    for (const st of this.itemsOfKind('studio')) {
+      st._cls ||= [];
+      for (let k = 0; k < CLASS_SLOTS.length; k++) {
+        const start = CLASS_SLOTS[k];
+        const c = st._cls[k];
+        if (!c) {
+          const type = st.classes && st.classes[k];
+          if (!type || now < start) continue;
+          if (now >= start + CLASS_LEN) {
+            // kayıttan devam ederken geçmiş dersler (bildirim yok)
+            st._cls[k] = { state: 'done', type, attend: 0 };
+            continue;
+          }
+          const ins = st._instructor;
+          if (ins && ins.state === 'teach') {
+            st._cls[k] = { state: 'running', type, attend: 0 };
+            s.today.classRuns = (s.today.classRuns || 0) + 1;
+          } else if (now > start + 12 || !ins) {
+            // eğitmen gelmedi (ya da hiç yok): ders iptal
+            st._cls[k] = { state: 'canceled', type, attend: 0 };
+            s.today.classCanceled = (s.today.classCanceled || 0) + 1;
+            G.ui.notify(`❌ ${CLASSES[type].icon} ${CLASSES[type].name} dersi iptal: ${s.staff.some(x => x.role === 'instructor') ? 'eğitmen yetişemedi' : 'Grup Eğitmeni yok'}`, 'bad');
+          }
+        } else if (c.state === 'running' && now >= start + CLASS_LEN) c.state = 'done';
+      }
+    }
+  }
+
+  trackClass(type, st, k) {
+    const s = G.state;
+    const t = s.today;
+    t.classAttend ||= {};
+    t.classAttend[type] = (t.classAttend[type] || 0) + 1;
+    s.stats.classes ||= {};
+    s.stats.classes[type] = (s.stats.classes[type] || 0) + 1;
+    const c = st && st._cls && st._cls[k];
+    if (c) c.attend++;
+  }
+
+  setClass(st, k, type) {
+    st.classes ||= CLASS_DEFAULT.slice();
+    st.classes[k] = type;
+    // başlamamış ders hemen güncellenir; başlamış olan yarından itibaren
+  }
+
   // ---------------- olaylar / pazarlama ----------------
   hasEvent(type) {
     return G.state.events.some(e => e.type === type && e.until >= G.state.day);
@@ -492,7 +577,8 @@ export class Sim {
     const types = new Set(s.items.filter(it => ['cardio', 'strength', 'functional'].includes(ITEMS[it.type].cat)).map(it => it.type));
     const has = k => s.items.some(it => ITEMS[it.type].kind === k);
     let p = 18 + s.rep * 3 + Math.min(types.size, 15) * 0.9;
-    if (has('shower')) p += 4;
+    if (this.itemsOfKind('shower').length) p += 4;
+    if (this.itemsOfKind('studio').length && s.staff.some(x => x.role === 'instructor')) p += 5;
     if (has('locker')) p += 2;
     if (has('shop')) p += 3;
     if (s.staff.some(x => x.role === 'trainer')) p += 5;
@@ -516,6 +602,7 @@ export class Sim {
     const pr = this.priceRatio();
     base *= clamp(1.5 - 0.5 * pr, 0.3, 1.25) * clamp(1.25 - 0.025 * s.prices.dayPass, 0.5, 1.15);
     if (s.day <= 3) base *= 1.8; // açılış haftası merakı
+    if (this.classSlots().length && s.staff.some(x => x.role === 'instructor')) base *= 1.15; // grup dersleri yeni kitle çeker
     else if (s.day <= 7) base *= 1.3;
     if (this.hasEvent('competitor')) base *= 0.75;
     if (this.hasEvent('viral')) base *= 1.6;
@@ -541,6 +628,7 @@ export class Sim {
     this.generateGoals();
     this.refreshCandidates();
     this.buildSchedule();
+    for (const st of this.itemsOfKind('studio')) st._cls = [];
     this.spawnAllStaff();
     this.memberMap = new Map(s.members.map(m => [m.id, m]));
     G.ui && G.ui.onDayStart();
@@ -576,12 +664,30 @@ export class Sim {
     const di = dateInfo(s.day);
     const weekend = di.wd >= 5;
     const sch = [];
+    const slots = this.classSlots();
+    const studioOpen = ITEMS.studio.level <= s.level;
+    // derse göre geliş: dersten 12-25 dk önce
+    const classVisit = pref => {
+      let opts = slots.filter(x => x.type === pref);
+      if (!opts.length && Math.random() < 0.35) opts = slots;
+      if (!opts.length) return null;
+      const c = pick(opts);
+      return { t: c.t - rand(12, 25), m: null, cls: { sid: c.sid, k: c.k } };
+    };
     for (const m of s.members) {
       const p = m.freq * WD_FACTOR[di.wd] * MONTH_VISIT[di.month] * (0.45 + m.sat / 110);
-      if (Math.random() < p) sch.push({ t: this.slotTime(m.slot, weekend), m: m.id });
+      if (Math.random() >= p) continue;
+      const cv = m.classPref ? classVisit(m.classPref) : null;
+      if (cv) sch.push({ ...cv, m: m.id });
+      else sch.push({ t: this.slotTime(m.slot, weekend), m: m.id, noClass: !!(m.classPref && studioOpen && !slots.length && Math.random() < 0.5) });
     }
     const n = Math.max(0, Math.round(this.baseProspects() + gauss() * 1.5));
     for (let k = 0; k < n; k++) {
+      const cv = slots.length && Math.random() < 0.18 ? classVisit(null) || null : null;
+      if (cv) {
+        sch.push(cv);
+        continue;
+      }
       const slot = weightedPick([['early', 0.18], ['noon', 0.27], ['evening', 0.45], ['late', 0.1]]);
       sch.push({ t: this.slotTime(slot, weekend), m: null });
     }
@@ -781,6 +887,10 @@ export class Sim {
     if (iss.queue) s -= 6;
     if (iss.dirtyWc) s -= 6;
     if (a.coached) s += 9;
+    if (a.classDone) s += 10;
+    if (iss.classFull) s -= 9;
+    if (iss.classCanceled) s -= 11;
+    if (iss.noClass) s -= 4;
     if (a.vip) s -= 5; // ünlüler daha seçici
     const pr = this.priceRatio();
     if (pr > 1.15) s -= (pr - 1.15) * 25;
@@ -878,7 +988,8 @@ export class Sim {
     } else {
       const e = a._env || {};
       let key = 'general';
-      if (a.coached && Math.random() < 0.6) key = 'trainer';
+      if (a.classDone && Math.random() < 0.6) key = 'classes';
+      else if (a.coached && Math.random() < 0.6) key = 'trainer';
       else if (e.appeal > 0.55 && Math.random() < 0.6) key = 'atmosphere';
       else if (e.dirt < 0.05 && Math.random() < 0.5) key = 'clean';
       else if (a.waitTotal < 1 && Math.random() < 0.5) key = 'quiet';
@@ -984,6 +1095,7 @@ export class Sim {
         }
         t.sIdx++;
       }
+      this.updateClasses();
       // sıcaklık
       const tt = this.targetTemp();
       this.temp += (tt - this.temp) * Math.min(1, gdt * 0.06);
@@ -1082,8 +1194,7 @@ export class Sim {
       this.dirtTimer = 0;
       G.world.updateDirt(this.dirt);
       for (const it of s.items) {
-        const k = ITEMS[it.type].kind;
-        if (k === 'shower' || k === 'toilet') this.refreshItemIcon(it);
+        if (isWet(ITEMS[it.type])) this.refreshItemIcon(it);
       }
     }
   }
@@ -1099,12 +1210,13 @@ export class Sim {
       G.ui.notify(`⭐ ${prof.name} salona geldi! İyi bir izlenim bırak.`, 'info');
       return;
     }
+    const opts = { cls: e.cls, noClass: e.noClass };
     if (e.m) {
       const m = this.memberMap.get(e.m);
       if (!m) return;
-      spawnCustomer(m, false);
+      spawnCustomer(m, false, opts);
     } else {
-      spawnCustomer(createMemberProfile(s.day), true);
+      spawnCustomer(createMemberProfile(s.day), true, opts);
     }
   }
 
@@ -1174,7 +1286,7 @@ export class Sim {
     }
     const income = Object.values(t.income).reduce((a, b) => a + b, 0);
     const expense = Object.values(t.expense).reduce((a, b) => a + b, 0);
-    s.history.push({ day: s.day, income, expense, money: Math.round(s.money), members: s.members.length, sat: Math.round(avgSat), rep: s.rep, visits: t.visits, use: t.exUse, wait: t.exWait || {}, missing: t.exMissing || {} });
+    s.history.push({ day: s.day, income, expense, money: Math.round(s.money), members: s.members.length, sat: Math.round(avgSat), rep: s.rep, visits: t.visits, use: t.exUse, wait: t.exWait || {}, missing: t.exMissing || {}, classes: t.classAttend || {} });
     if (s.history.length > 60) s.history.shift();
     s.stats.maxMembers = Math.max(s.stats.maxMembers, s.members.length);
     this.checkMilestones();
@@ -1191,6 +1303,8 @@ export class Sim {
       members: s.members.length, avgSat: Math.round(avgSat), clean: Math.round(avgClean * 100),
       rep: s.rep, repDelta: s.rep - t.startRep, complaints: t.complaints, reviews: t.reviews.slice(0, 3),
       turnedAway: t.turnedAway, lostNames: t.lostNames, negDays: s.negDays, bankrupt, exUse: t.exUse,
+      classRuns: t.classRuns || 0, classCanceled: t.classCanceled || 0,
+      classAttend: Object.values(t.classAttend || {}).reduce((x, y) => x + y, 0),
     };
     save();
     G.ui.showDaySummary(report);

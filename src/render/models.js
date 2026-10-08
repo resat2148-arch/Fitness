@@ -95,8 +95,149 @@ function plateTree(p, x, z) {
   }
 }
 
+// ---- Oda yardımcıları ----
+// Taban y=0'da olan duvar parçası; kamera tarafına bakarsa World alçaltır (userData.walls)
+function roomWall(g, mat, w, h, d, x, z, nx, nz, hideWhenLow = false) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  geo.translate(0, h / 2, 0);
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, 0, z);
+  m.castShadow = !mat.transparent;
+  m.receiveShadow = true;
+  g.add(m);
+  (g.userData.walls ||= []).push({ mesh: m, nx, nz, h, hideWhenLow });
+  return m;
+}
+
+// W x D oda, ön duvarda doorW genişliğinde kapı boşluğu
+function roomShell(g, W, D, H, doorW, mats) {
+  const t = 0.1;
+  roomWall(g, mats.back, W, H, t, 0, -D / 2 + t / 2, 0, -1);
+  roomWall(g, mats.side, t, H, D - t * 2, -W / 2 + t / 2, 0, -1, 0);
+  roomWall(g, mats.side, t, H, D - t * 2, W / 2 - t / 2, 0, 1, 0);
+  const seg = (W - doorW) / 2;
+  roomWall(g, mats.front, seg, H, t, -W / 2 + seg / 2, D / 2 - t / 2, 0, 1);
+  roomWall(g, mats.front, seg, H, t, W / 2 - seg / 2, D / 2 - t / 2, 0, 1);
+  const lintel = roomWall(g, mats.side, doorW, 0.35, t, 0, D / 2 - t / 2, 0, 1, true);
+  lintel.position.y = H - 0.35;
+  return lintel;
+}
+
+function signTexture(text, bg, fg = '#ffffff') {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 96;
+  const x = c.getContext('2d');
+  x.fillStyle = bg;
+  x.fillRect(0, 0, 256, 96);
+  x.fillStyle = fg;
+  x.font = 'bold 44px "Segoe UI", Arial, sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText(text, 128, 50);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function doorSign(parent, text, bg, y, z) {
+  const m = new THREE.MeshStandardMaterial({ map: signTexture(text, bg), emissive: 0xffffff, emissiveMap: signTexture(text, bg), emissiveIntensity: 0.25 });
+  const p = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.03), [MAT.black, MAT.black, MAT.black, MAT.black, m, MAT.black]);
+  p.position.set(0, y, z);
+  parent.add(p);
+  return p;
+}
+
+function buildLockerRoom(g, gender) {
+  const male = gender === 'm';
+  const wallMat = std(male ? 0xdbe7f3 : 0xf6e1ea, 0.8);
+  roomShell(g, 3, 3, 2.4, 0.9, { back: wallMat, side: wallMat, front: wallMat });
+  // fayans zemin
+  B(g, std(male ? 0xc9dced : 0xf1d3df, 0.35), 2.8, 0.02, 2.8, 0, 0.01, 0).castShadow = false;
+  // kapı tabelası (lento ile birlikte alçalır)
+  const lintel = g.userData.walls[g.userData.walls.length - 1].mesh;
+  doorSign(lintel, male ? '♂ ERKEK' : '♀ KADIN', male ? '#2b6cb0' : '#c2185b', 0.17, 0.07);
+  // dolaplar
+  const body = std(male ? 0x3f5f80 : 0x8a4f6e, 0.45, 0.35);
+  const door = std(male ? 0x5d82a8 : 0xb06a8f, 0.4, 0.35);
+  B(g, body, 2.75, 1.9, 0.4, 0, 0.95, -1.18);
+  for (let c = 0; c < 6; c++)
+    for (let r = 0; r < 2; r++) {
+      const x = -1.15 + c * 0.46;
+      const y = 0.52 + r * 0.92;
+      B(g, door, 0.42, 0.86, 0.02, x, y, -0.97);
+      B(g, MAT.chrome, 0.03, 0.08, 0.03, x + 0.15, y, -0.95);
+    }
+  // bank
+  B(g, MAT.wood, 2.3, 0.05, 0.28, 0, 0.42, -0.72);
+  for (const s of [-1, 1]) B(g, MAT.frame, 0.05, 0.4, 0.22, s * 1.0, 0.2, -0.72);
+  // duş (sol ön)
+  B(g, MAT.tile, 0.88, 0.06, 0.98, -0.95, 0.03, 0.9);
+  B(g, MAT.frosted, 0.03, 1.9, 1.0, -0.48, 0.95, 0.9);
+  B(g, MAT.chrome, 0.04, 0.45, 0.04, -1.36, 1.85, 0.9);
+  Cy(g, MAT.chrome, 0.09, 0.03, -1.28, 2.05, 0.9, 'y', 14);
+  const water = Cy(g, MAT.water, 0.1, 1.9, -1.15, 1.05, 0.9, 'y', 12, 0.24);
+  water.castShadow = false;
+  water.visible = false;
+  g.userData.water = water;
+  // tuvalet kabini (sağ ön)
+  const part = std(0x7a8ca0, 0.5);
+  B(g, part, 0.04, 1.9, 1.0, 0.48, 0.95, 0.9);
+  B(g, std(0x5c6f84, 0.5), 0.86, 1.8, 0.04, 0.95, 0.95, 0.38);
+  B(g, MAT.chrome, 0.12, 0.03, 0.04, 0.7, 1.0, 0.35);
+  B(g, MAT.white, 0.36, 0.4, 0.46, 0.95, 0.2, 1.12);
+  B(g, MAT.white, 0.36, 0.42, 0.14, 0.95, 0.55, 1.32);
+  // lavabo + ayna (sağ duvar)
+  B(g, MAT.white, 0.35, 0.12, 0.4, 1.25, 0.85, -0.25);
+  B(g, MAT.mirror, 0.02, 0.6, 0.5, 1.38, 1.45, -0.25);
+}
+
+function buildStudio(g) {
+  const wallMat = std(0xefe9df, 0.85);
+  const glass = std(0xcfe8ff, 0.08, 0.1, { transparent: true, opacity: 0.35, depthWrite: false });
+  roomShell(g, 5, 4, 2.6, 1.0, { back: wallMat, side: glass, front: glass });
+  const walls = g.userData.walls;
+  // çerçeve dikmeleri cam duvarlarda
+  for (const x of [-2.45, -0.5, 0.5, 2.45]) roomWall(g, MAT.frame, 0.06, 2.6, 0.12, x, 1.94, 0, 1);
+  for (const z of [-1.0, 0.0, 1.0]) {
+    roomWall(g, MAT.frame, 0.12, 2.6, 0.06, -2.45, z, -1, 0);
+    roomWall(g, MAT.frame, 0.12, 2.6, 0.06, 2.45, z, 1, 0);
+  }
+  // arka duvarda ayna (duvarla birlikte alçalır)
+  const back = walls[0].mesh;
+  const mirror = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.8, 0.02), MAT.mirror);
+  mirror.position.set(0, 1.25, 0.06);
+  back.add(mirror);
+  const lintel = walls.find(w => w.hideWhenLow).mesh;
+  doorSign(lintel, 'STÜDYO', '#6a3fb5', 0.17, 0.07);
+  // ahşap zemin (parke şeritleri)
+  const woodA = std(0xc99a68, 0.6), woodB = std(0xb98955, 0.6);
+  for (let i = 0; i < 10; i++) B(g, i % 2 ? woodA : woodB, 4.8, 0.03, 0.38, 0, 0.015, -1.71 + i * 0.38).castShadow = false;
+  // eğitmen kürsüsü
+  B(g, std(0x2b2f36, 0.6), 1.4, 0.15, 0.8, 0, 0.075, -1.35);
+  B(g, MAT.accent, 1.42, 0.03, 0.82, 0, 0.16, -1.35);
+  // matlar
+  const cols = [0x8e44ad, 0x16a085, 0xe67e22, 0x2980b9, 0xc0392b, 0x27ae60, 0xd35400];
+  const pts = [[-1.6, 0.75], [-0.55, 0.75], [0.55, 0.75], [1.6, 0.75], [-1.1, -0.3], [0, -0.3], [1.1, -0.3]];
+  pts.forEach(([x, z], i) => (B(g, std(cols[i], 0.9), 0.6, 0.014, 0.95, x, 0.037, z).castShadow = false));
+  // hoparlörler
+  for (const s of [-1, 1]) B(g, MAT.black, 0.35, 0.55, 0.28, s * 2.1, 2.05, -1.75);
+  // pilates topları
+  const ballCols = [0x4cc9f0, 0xf72585, 0x7209b7];
+  ballCols.forEach((c, i) => Sp(g, std(c, 0.4), 0.28, 2.05, 0.3, -0.6 + i * 0.62));
+}
+
 // ---- Model üreticileri ----
 const BUILD = {
+  lockerroom_m(g) {
+    buildLockerRoom(g, 'm');
+  },
+  lockerroom_f(g) {
+    buildLockerRoom(g, 'f');
+  },
+  studio(g) {
+    buildStudio(g);
+  },
   treadmill(g) {
     B(g, MAT.frame, 0.78, 0.14, 1.85, 0, 0.09, 0.05);
     B(g, MAT.rubber, 0.56, 0.03, 1.62, 0, 0.18, 0.1);

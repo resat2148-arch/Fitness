@@ -401,3 +401,4 @@ b.bad, b.good, b.warn { font-weight: 700; }
 .iteml:hover { background: rgba(255,255,255,0.06); }
 .iteml span:first-child { flex: 1; }
 .iteml b { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+.btn.off { background: rgba(255,255,255,0.08); color: var(--muted); box-shadow: none; }

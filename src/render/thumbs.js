@@ -27,6 +27,13 @@ export function generateThumbnails(size = 160) {
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
   for (const type of Object.keys(ITEMS)) {
     const m = buildItemModel(type, 1);
+    // odalarda kameraya bakan duvarları alçalt ki içi görünsün
+    for (const w of m.userData.walls || []) {
+      if (w.nx * 6 + w.nz * 7 > 0) {
+        if (w.hideWhenLow) w.mesh.visible = false;
+        else w.mesh.scale.y = Math.min(1, 0.45 / w.h);
+      }
+    }
     scene.add(m);
     const box = new THREE.Box3().setFromObject(m);
     const c = box.getCenter(new THREE.Vector3());

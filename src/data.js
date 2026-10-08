@@ -46,6 +46,38 @@ export const GROUP_NAMES = {
   spots: { x, z (metre, merkeze göre), y (taban yüksekliği), face (radyan, 0 = +z'ye bakar),
            pose, ax, az (erişim noktası, metre), prop }
 */
+// Soyunma odası (3x3): dolaplar arka duvarda, önde duş (sol) ve tuvalet (sağ), kapı ortada.
+// via: kapıdan içeri girerken izlenen ara noktalar (yerel metre)
+function lockerRoom(g) {
+  return {
+    name: g === 'm' ? 'Erkek Soyunma Odası' : 'Kadın Soyunma Odası', cat: 'facility', price: 3000, size: [3, 3], level: 1,
+    power: 0.6, wear: 0, appeal: 1, kind: 'lockerroom', room: true, wet: true, gender: g,
+    desc: (g === 'm' ? 'Erkek' : 'Kadın') + ' üyeler için ayrı oda: 3 dolap yeri, duş ve tuvalet. Her iki cinsiyet için de bir oda gerekir.',
+    spots: [
+      ...[-0.95, 0, 0.95].map(x => ({ x, z: -0.3, y: 0, face: Math.PI, pose: 'locker', kind: 'locker', ax: 0, az: 2.0, via: [[0, 1.0], [x, 0.15]] })),
+      { x: -0.95, z: 0.9, y: 0.05, face: -Math.PI / 2, pose: 'shower', kind: 'shower', water: 0.45, ax: 0, az: 2.0, via: [[0, 1.0], [0, 0.15], [-0.95, 0.15]] },
+      { x: 0.95, z: 0.9, y: 0, face: Math.PI, pose: 'hidden', kind: 'toilet', water: 0.05, ax: 0, az: 2.0, via: [[0, 1.0], [0, 0.15], [0.95, 0.15]] },
+    ],
+  };
+}
+
+// Bir spot'un türü (oda içindeki dolap/duş/tuvalet) yoksa eşyanın türü
+export const spotKind = (def, s) => s.kind || def.kind;
+export const hasKind = (def, kind) => def.kind === kind || !!(def.spots && def.spots.some(s => s.kind === kind));
+export const isWet = def => def.kind === 'shower' || def.kind === 'toilet' || !!def.wet;
+
+// Grup dersleri
+export const CLASSES = {
+  zumba: { name: 'Zumba', icon: '💃', pose: 'dance' },
+  pilates: { name: 'Pilates', icon: '🤸', pose: 'yoga' },
+  yoga: { name: 'Yoga', icon: '🧘', pose: 'yoga' },
+  hiit: { name: 'HIIT', icon: '🔥', pose: 'jacks' },
+  kickbox: { name: 'Kick Boks', icon: '🥊', pose: 'punch' },
+};
+export const CLASS_LEN = 45; // dakika
+export const CLASS_SLOTS = [7 * 60, 9 * 60 + 30, 12 * 60 + 30, 17 * 60 + 30, 19 * 60, 20 * 60 + 30];
+export const CLASS_DEFAULT = ['hiit', null, 'pilates', 'zumba', 'yoga', null];
+
 export const ITEMS = {
   // ---------- KARDİYO ----------
   treadmill: {
@@ -151,8 +183,22 @@ export const ITEMS = {
     spots: [{ x: 0, z: 1.5, y: 0, face: Math.PI, pose: 'idle', ax: 0, az: 1.5 }],
     staffSpot: { x: 0, z: -0.45, y: 0, face: 0, ax: 1.9, az: -0.5 },
   },
+  // ---------- ODALAR ----------
+  lockerroom_m: lockerRoom('m'),
+  lockerroom_f: lockerRoom('f'),
+  studio: {
+    name: 'Grup Dersi Stüdyosu', cat: 'facility', price: 9500, size: [5, 4], level: 3,
+    power: 0.8, wear: 0, appeal: 6, kind: 'studio', room: true,
+    desc: 'Aynalı, ahşap zeminli ders salonu. Zumba, Pilates, Yoga, HIIT ve Kick Boks dersleri. 7 kişilik; Grup Eğitmeni gerekir.',
+    spots: [
+      ...[-1.6, -0.55, 0.55, 1.6].map(x => ({ x, z: 0.75, y: 0.03, face: Math.PI, pose: 'idle', kind: 'class', ax: 0, az: 2.5, via: [[0, 1.55], [x, 1.55]] })),
+      ...[-1.1, 0, 1.1].map(x => ({ x, z: -0.3, y: 0.03, face: Math.PI, pose: 'idle', kind: 'class', ax: 0, az: 2.5, via: [[0, 1.55], [x, 1.55]] })),
+    ],
+    staffSpot: { x: 0, z: -1.35, y: 0.15, face: 0, ax: 0, az: 2.5, via: [[0, 1.55], [-2.05, 1.55], [-2.05, -1.35]] },
+  },
+  // Eski sürümden kalan tekli dolap: kayıtlarda çalışır, katalogda gösterilmez
   locker: {
-    name: 'Soyunma Dolabı', cat: 'facility', price: 800, size: [2, 1], level: 1,
+    name: 'Soyunma Dolabı', cat: 'facility', price: 800, size: [2, 1], level: 1, hidden: true,
     power: 0, wear: 0.05, appeal: 0, kind: 'locker',
     desc: 'Üyeler eşyalarını bırakıp üstlerini değiştirir. Olmazsa çok şikayet gelir.',
     spots: [
@@ -254,6 +300,10 @@ export const STAFF_ROLES = {
     name: 'Teknisyen', icon: '🔧', wage: [80, 120], level: 3, color: 0xf4a261,
     desc: 'Bozulan aletleri tamir eder, bakım yapar.',
   },
+  instructor: {
+    name: 'Grup Eğitmeni', icon: '🧘', wage: [70, 115], level: 3, color: 0x9b5de5,
+    desc: 'Stüdyodaki grup derslerini verir. Eğitmen yoksa planlanan dersler iptal olur.',
+  },
   trainer: {
     name: 'Kişisel Antrenör', icon: '💪', wage: [90, 140], level: 4, color: 0xd62828,
     desc: 'Üyelere koçluk yapar, PT dersi satar. Memnuniyeti ciddi artırır.',
@@ -325,6 +375,9 @@ export const ISSUES = {
   noStaff: { emoji: '🙋', tip: 'Resepsiyonist işe al.', label: 'Resepsiyonda kimse yok', review: ['Resepsiyonda kimse yoktu, içeri giremedim.', 'Kayıt olmak istedim ama ilgilenen olmadı.'] },
   queue: { emoji: '🧾', tip: 'İkinci bir resepsiyon masası ve resepsiyonist ekle.', label: 'Resepsiyon kuyruğu', review: ['Girişte uzun kuyruk vardı.', 'Resepsiyon çok yavaş.'] },
   dirtyWc: { emoji: '🧻', tip: 'Temizlik görevlisi işe al.', label: 'Kirli duş/WC', review: ['Duşlar ve tuvaletler pislik içinde.', 'Islak alanlar çok kirli.'] },
+  classFull: { emoji: '🚫', tip: 'İkinci bir stüdyo aç ya da ders saatlerini artır.', label: 'Ders dolu', review: ['Derse geldim ama yer yoktu, çok sinir bozucu.', 'Grup dersleri hep dolu.'] },
+  classCanceled: { emoji: '❌', tip: 'Grup Eğitmeni işe al.', label: 'Ders iptal', review: ['Ders için geldim, eğitmen yokmuş. Ders iptal!', 'Programdaki ders yapılmadı.'] },
+  noClass: { emoji: '🧘', tip: 'Grup Dersi Stüdyosu kur ve istenen dersleri programa ekle.', label: 'Grup dersi yok', review: ['Keşke grup dersleri olsa.', 'Zumba/Pilates gibi dersler yok, sıkıcı.'] },
   price: { emoji: '💸', tip: 'Üyelik fiyatını düşür veya salonun kalitesini artır.', label: 'Pahalı', review: ['Bu fiyata daha iyisini bulurum.', 'Üyelik ücreti hizmete göre çok pahalı.'] },
 };
 
@@ -335,6 +388,7 @@ export const PRAISES = {
   variety: ['Ekipman çeşitliliği süper.', 'Aradığım her alet var.'],
   quiet: ['Hiç beklemeden antrenmanımı tamamladım.', 'Rahat ve sakin bir salon.'],
   price: ['Fiyat/performans harika.', 'Bu fiyata bu kalite, çok iyi.'],
+  classes: ['Grup dersi muhteşemdi, enerji tavan!', 'Eğitmen harika, derslere bayılıyorum.', 'Arkadaşlarla derse gelmek çok keyifli.'],
   general: ['Harika bir antrenman yaptım!', 'Personel çok güler yüzlü.', 'Her gün geleceğim!', 'Mahallenin en iyi salonu.'],
 };
 

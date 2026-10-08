@@ -928,10 +928,22 @@ export class World {
     if (this.doorPanels) for (const p of this.doorPanels) p.position.x = p.userData.base + p.userData.dir * this.doorOpen * 0.95;
 
     // eşya animasyonları
+    const cd = this.engine.camDir();
     for (const it of G.state.items) {
       const m = it._mesh;
       if (!m) continue;
       const u = m.userData;
+      // oda duvarları: kameraya bakan duvarlar alçalır, içerisi görünür
+      if (u.walls) {
+        const th = (it.rot * Math.PI) / 2;
+        const cs = Math.cos(th), sn = Math.sin(th);
+        for (const w of u.walls) {
+          const wx = w.nx * cs + w.nz * sn, wz = -w.nx * sn + w.nz * cs;
+          const facing = wx * cd.x + wz * cd.z > 0.1;
+          if (w.hideWhenLow) w.mesh.visible = !facing;
+          else w.mesh.scale.y = facing ? Math.min(1, 0.45 / w.h) : 1;
+        }
+      }
       if (u.spin) u.spin.rotation.z += dt * 18;
       if (u.swing) {
         const busy = it._busy;
