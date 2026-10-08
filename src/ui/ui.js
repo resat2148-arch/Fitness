@@ -792,10 +792,13 @@ export class UI {
       const mask = new Uint8Array(vals.length);
       const eq = G.state.items.filter(it => ITEMS[it.type].dur);
       const maxU = Math.max(1, ...eq.map(it => it.uses));
+      // aletin kapladığı karolar + kullanıcıların durduğu karolar (alet modeli zemini örttüğü için)
       for (const it of eq)
-        for (const c of G.sim.cells(it.type, it.i, it.j, it.rot)) {
+        for (const c of [...G.sim.cells(it.type, it.i, it.j, it.rot), ...G.sim.accessTiles(it.type, it.i, it.j, it.rot)]) {
+          if (c.i < 0 || c.j < 0 || c.i >= MAXW || c.j >= MAXD) continue;
           const k = c.j * MAXW + c.i;
-          vals[k] = 1 - it.uses / maxU;
+          const v = 1 - it.uses / maxU;
+          vals[k] = mask[k] ? Math.min(vals[k], v) : v;
           mask[k] = 1;
         }
       G.world.showHeat(vals, mask);

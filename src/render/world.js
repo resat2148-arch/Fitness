@@ -678,6 +678,7 @@ export class World {
     const data = new Uint8Array(MAXW * MAXD * 4);
     const tex = new THREE.DataTexture(data, MAXW, MAXD, THREE.RGBAFormat);
     tex.magFilter = THREE.LinearFilter;
+    tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
     this.heatData = data;
     this.heatTex = tex;
