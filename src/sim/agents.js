@@ -568,7 +568,7 @@ function onEntered(a, sw) {
   const s = def.spots[a.spot.k];
   a.state = 'use';
   a.face = sw.face;
-  a.timer = a.task.type === 'exercise' ? rand(...def.dur) : a.task.dur;
+  a.timer = a.task.type === 'exercise' ? rand(...def.dur) * (a.task.short ? 0.6 : 1) : a.task.dur;
   a.useT = 0;
   if (a.ch) a.ch.setProp(s.prop || null);
   const m = it._mesh;
@@ -592,7 +592,13 @@ function startClass(a, t) {
     issue(a, 'classCanceled');
     return classFallback(a);
   }
-  if (c.state === 'done' || now > c.start + 12) return classFallback(a);
+  if (c.state === 'done' || now > c.start + 15) return classFallback(a);
+  // ders başlamasına çok varsa önce bir alet kullan, sonra derse gel
+  if (c.start - now > 22 && (t.deferred || 0) < 3) {
+    t.deferred = (t.deferred || 0) + 1;
+    a.tasks.unshift({ type: 'exercise', group: 'cardio', pref: pick(GROUPS.cardio), short: true }, t);
+    return nextTask(a);
+  }
   t.kind = 'class';
   t.dur = 0;
   t.cands = [st];
