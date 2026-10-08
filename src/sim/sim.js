@@ -672,8 +672,8 @@ export class Sim {
       if (!opts.length && Math.random() < 0.35) opts = slots;
       if (!opts.length) return null;
       const c = pick(opts);
-      // kaldırımdan yürüme + giriş + soyunma odası ~25-30 dk sürer
-      return { t: c.t - rand(38, 55), m: null, cls: { sid: c.sid, k: c.k } };
+      // kaldırımdan yürüme + giriş kuyruğu + soyunma odası 60 dk'yı bulabilir; erken varan önce kısa antrenman yapar
+      return { t: c.t - rand(45, 60), m: null, cls: { sid: c.sid, k: c.k } };
     };
     for (const m of s.members) {
       const p = m.freq * WD_FACTOR[di.wd] * MONTH_VISIT[di.month] * (0.45 + m.sat / 110);

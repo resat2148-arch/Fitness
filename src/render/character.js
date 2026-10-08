@@ -476,6 +476,14 @@ const POSES = {
     c.hipR.rotation.z = -k * 0.32;
     c.body.position.y = STAND_Y + k * 0.1;
   },
+  cheerStretch(c, t) {
+    // ayakta esneme: kollar yukarı, yana eğilme
+    const sw = S(t * 1.1) * 0.3;
+    arms(c, -3.0, -3.0, -0.1, -0.1);
+    c.spine.rotation.z = sw;
+    c.hipL.rotation.z = 0.15;
+    c.hipR.rotation.z = -0.15;
+  },
   locker(c, t) {
     arms(c, -1.1 + S(t * 3) * 0.15, -1.0 - S(t * 3) * 0.15, -0.7, -0.6);
     c.head.rotation.x = 0.1;

@@ -179,7 +179,8 @@ export function spawnCustomer(profile, walkin, opts = {}) {
     m: profile,
     walkin,
     vip: !!opts.vip,
-    pos: { x: fromLeft ? -9 : MAXW + 9, z: MAXD + 0.8 + Math.random() * 1.2 },
+    // kapıya yakın bir noktadan (görünür kaldırım) gelir
+    pos: { x: DOOR_X + (fromLeft ? -1 : 1) * rand(7, 13), z: MAXD + 0.8 + Math.random() * 1.2 },
     y: 0,
     speed: WALK_SPEED * rand(0.9, 1.12),
     state: 'idle',
@@ -209,15 +210,15 @@ export function spawnCustomer(profile, walkin, opts = {}) {
     for (let k = 0; k < n; k++) ex.push({ type: 'exercise', group, pref: pick(GROUPS[group]) });
   }
   if (!ex.length) ex.push({ type: 'exercise', group: 'cardio', pref: 'treadmill' });
-  if (opts.cls) {
-    // derse gelen: ders + belki bir alet
-    ex.splice(randi(0, 1));
-    ex.unshift({ type: 'class', sid: opts.cls.sid, k: opts.cls.k });
-  }
   // karıştır (ısınma için kardiyo başta olabilir)
   ex.sort(() => Math.random() - 0.5);
   const cardioIdx = ex.findIndex(e => e.group === 'cardio');
   if (cardioIdx > 0 && Math.random() < 0.6) ex.unshift(ex.splice(cardioIdx, 1)[0]);
+  if (opts.cls) {
+    // derse gelen: önce ders, sonra belki bir alet
+    ex.splice(randi(0, 1));
+    ex.unshift({ type: 'class', sid: opts.cls.sid, k: opts.cls.k });
+  }
   a.tasks.push({ type: 'checkin' }, { type: 'locker', first: true }, ...ex, { type: 'shower' }, { type: 'locker', first: false }, { type: 'buy' }, { type: 'exit' });
   a.plannedEx = ex.length;
   if (a.vip) showBubble(a, '⭐', 9999);
@@ -592,9 +593,9 @@ function startClass(a, t) {
     issue(a, 'classCanceled');
     return classFallback(a);
   }
-  if (c.state === 'done' || now > c.start + 15) return classFallback(a);
+  if (c.state === 'done' || now > c.start + 20) return classFallback(a);
   // ders başlamasına çok varsa önce bir alet kullan, sonra derse gel
-  if (c.start - now > 22 && (t.deferred || 0) < 3) {
+  if (c.start - now > 75 && (t.deferred || 0) < 2) {
     t.deferred = (t.deferred || 0) + 1;
     a.tasks.unshift({ type: 'exercise', group: 'cardio', pref: pick(GROUPS.cardio), short: true }, t);
     return nextTask(a);
@@ -621,9 +622,10 @@ function updateClassUse(a, dt) {
   }
   const cl = CLASSES[c.type];
   if (c.state === 'upcoming') {
-    a.pose = 'idle';
+    // derse erken gelen esneyerek bekler
+    a.pose = Math.floor(a.useT / 6) % 2 ? 'idle' : 'cheerStretch';
     a.status = `${cl.name} dersinin başlamasını bekliyor`;
-    if (a.useT > 45) finishUse(a);
+    if (a.useT > 90) finishUse(a);
     return;
   }
   if (c.state === 'running') {
@@ -1136,7 +1138,7 @@ function updateInstructor(a, dt) {
       return;
     }
     const sw = spotWorld(st, ss);
-    const c = G.sim.classNow(st, 20);
+    const c = G.sim.classNow(st, 50);
     if (c) {
       a.face = sw.face;
       a.pose = c.state === 'running' ? CLASSES[c.type].pose : 'idle';
@@ -1153,7 +1155,7 @@ function updateInstructor(a, dt) {
     }, false);
     return;
   }
-  const st = G.sim.itemsOfKind('studio').find(x => (!x._instructor || x._instructor === a) && G.sim.classNow(x, 20));
+  const st = G.sim.itemsOfKind('studio').find(x => (!x._instructor || x._instructor === a) && G.sim.classNow(x, 50));
   if (st) {
     st._instructor = a;
     a.studio = st;
