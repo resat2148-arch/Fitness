@@ -16,7 +16,7 @@ const MONTH_SEASON = [1.6, 1.2, 1.1, 1.1, 1.25, 1.2, 0.85, 0.8, 1.15, 1.0, 0.95,
 const MONTH_VISIT = [1.12, 1.05, 1.0, 1.0, 1.05, 1.0, 0.88, 0.85, 1.0, 1.0, 0.97, 0.9];
 
 export const INCOME_NAMES = {
-  membership: 'Yeni üyelik', renewal: 'Üyelik yenileme', daypass: 'Günlük bilet', vending: 'Otomat satışı',
+  membership: 'Yeni üyelik', joinfee: 'Kayıt ücreti', renewal: 'Üyelik yenileme', daypass: 'Günlük bilet', vending: 'Otomat satışı',
   shop: 'Protein bar', pt: 'PT dersleri', reward: 'Hedef ödülleri', loan: 'Kredi',
 };
 export const EXPENSE_NAMES = {
@@ -510,7 +510,7 @@ export class Sim {
     const s = G.state;
     const di = dateInfo(s.day);
     const avgSat = s.members.length ? s.members.reduce((a, m) => a + m.sat, 0) / s.members.length : 70;
-    let base = 6 + s.rep * 2.6 + s.members.length * 0.012 * (avgSat / 70);
+    let base = 8 + s.rep * 3 + s.members.length * 0.012 * (avgSat / 70);
     base *= 1 + this.marketingBoost();
     base *= MONTH_SEASON[di.month] * WD_FACTOR[di.wd];
     const pr = this.priceRatio();
@@ -716,9 +716,40 @@ export class Sim {
     s.today.expense[cat] = (s.today.expense[cat] || 0) + amt;
   }
 
+  // ---------------- alet istatistikleri ----------------
   trackExercise(type) {
     const t = G.state.today;
     t.exUse[type] = (t.exUse[type] || 0) + 1;
+    const st = G.state.stats;
+    st.use[type] = (st.use[type] || 0) + 1;
+  }
+
+  trackWait(type) {
+    const t = G.state.today;
+    t.exWait = t.exWait || {};
+    t.exWait[type] = (t.exWait[type] || 0) + 1;
+    const st = G.state.stats;
+    st.wait[type] = (st.wait[type] || 0) + 1;
+  }
+
+  trackMissing(group) {
+    const t = G.state.today;
+    t.exMissing = t.exMissing || {};
+    t.exMissing[group] = (t.exMissing[group] || 0) + 1;
+  }
+
+  // dönem: 'today' | 'week' | 'all' -> { use: {type: n}, wait: {type: n}, missing: {group: n} }
+  usageStats(period) {
+    const s = G.state;
+    const t = s.today;
+    if (period === 'all') return { use: { ...s.stats.use }, wait: { ...s.stats.wait }, missing: { ...(t.exMissing || {}) } };
+    const out = { use: { ...t.exUse }, wait: { ...(t.exWait || {}) }, missing: { ...(t.exMissing || {}) } };
+    if (period === 'week') {
+      for (const h of s.history.slice(-6)) {
+        for (const k of ['use', 'wait', 'missing']) for (const [ty, n] of Object.entries(h[k] || {})) out[k][ty] = (out[k][ty] || 0) + n;
+      }
+    }
+    return out;
   }
 
   // ---------------- memnuniyet ----------------
@@ -797,7 +828,7 @@ export class Sim {
     } else {
       // dönüşüm
       const hasRecep = this.staffAgents.some(x => x.role === 'receptionist' && x.state === 'work');
-      let pc = clamp((sat - 38) / 55, 0, 1) * clamp(1.45 - 0.55 * pr, 0.08, 1.2) * (hasRecep ? 1 : 0.45) * 0.88;
+      let pc = clamp((sat - 38) / 55, 0, 1) * clamp(1.45 - 0.55 * pr, 0.08, 1.2) * (hasRecep ? 1 : 0.45) * clamp(1.1 - (s.prices.joinFee || 0) * 0.005, 0.6, 1.1);
       if (Math.random() < pc) {
         m.sat = sat;
         m.joined = s.day;
@@ -807,6 +838,7 @@ export class Sim {
         t.newMembers++;
         s.stats.newMembers++;
         this.earn('membership', s.prices.monthly, a);
+        if (s.prices.joinFee) this.earn('joinfee', s.prices.joinFee);
         this.progressGoal('newMembers', 1);
         this.addXP(6);
         showBubble(a, '🎉', 2.5);
@@ -895,7 +927,7 @@ export class Sim {
       progress: 0,
       text: g.text(g.target),
       end: !!g.end,
-      reward: Math.round((50 + s.day * 7 + s.level * 22) / 10) * 10,
+      reward: Math.round((80 + s.day * 10 + s.level * 30) / 10) * 10,
       xp: 15 + s.level * 4,
       done: false,
     }));
@@ -1142,7 +1174,7 @@ export class Sim {
     }
     const income = Object.values(t.income).reduce((a, b) => a + b, 0);
     const expense = Object.values(t.expense).reduce((a, b) => a + b, 0);
-    s.history.push({ day: s.day, income, expense, money: Math.round(s.money), members: s.members.length, sat: Math.round(avgSat), rep: s.rep, visits: t.visits });
+    s.history.push({ day: s.day, income, expense, money: Math.round(s.money), members: s.members.length, sat: Math.round(avgSat), rep: s.rep, visits: t.visits, use: t.exUse, wait: t.exWait || {}, missing: t.exMissing || {} });
     if (s.history.length > 60) s.history.shift();
     s.stats.maxMembers = Math.max(s.stats.maxMembers, s.members.length);
     this.checkMilestones();

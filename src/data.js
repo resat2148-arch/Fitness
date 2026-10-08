@@ -7,7 +7,7 @@ export const DOOR_I = [2, 3]; // kapı karoları (ön duvar)
 export const OPEN_MIN = 6 * 60;
 export const LAST_ARRIVAL_MIN = 22 * 60;
 export const CLOSE_MIN = 23 * 60;
-export const REAL_SEC_PER_GAME_MIN = 0.22; // 1x hızda
+export const REAL_SEC_PER_GAME_MIN = 0.17; // 1x hızda
 
 export const CATEGORIES = [
   { id: 'cardio', name: 'Kardiyo', icon: '🏃' },
@@ -179,7 +179,7 @@ export const ITEMS = {
     spots: [{ x: 0, z: 0.0, y: 0.05, face: 0, pose: 'shower', ax: 0, az: 1.0 }],
   },
   vending: {
-    name: 'Otomat', cat: 'facility', price: 2100, size: [1, 1], level: 2,
+    name: 'Otomat', cat: 'facility', price: 1800, size: [1, 1], level: 1,
     power: 0.4, wear: 0.05, appeal: 1, kind: 'vending', sale: [3, 6],
     desc: 'Su, enerji içeceği ve protein bar satar. Pasif gelir!',
     spots: [{ x: 0, z: 0.95, y: 0, face: Math.PI, pose: 'buy', ax: 0, az: 1.0 }],
@@ -243,19 +243,19 @@ export const ITEMS = {
 
 export const STAFF_ROLES = {
   receptionist: {
-    name: 'Resepsiyonist', icon: '🧑‍💼', wage: [70, 115], level: 1, color: 0x1d3557,
+    name: 'Resepsiyonist', icon: '🧑‍💼', wage: [60, 95], level: 1, color: 0x1d3557,
     desc: 'Müşteri girişleri, günlük bilet ve üyelik satışı. Olmazsa yeni müşteri kaybedersin.',
   },
   cleaner: {
-    name: 'Temizlik Görevlisi', icon: '🧹', wage: [55, 85], level: 1, color: 0x2a9d8f,
+    name: 'Temizlik Görevlisi', icon: '🧹', wage: [45, 70], level: 1, color: 0x2a9d8f,
     desc: 'Zeminleri, duşları ve tuvaletleri temizler.',
   },
   technician: {
-    name: 'Teknisyen', icon: '🔧', wage: [95, 140], level: 3, color: 0xf4a261,
+    name: 'Teknisyen', icon: '🔧', wage: [80, 120], level: 3, color: 0xf4a261,
     desc: 'Bozulan aletleri tamir eder, bakım yapar.',
   },
   trainer: {
-    name: 'Kişisel Antrenör', icon: '💪', wage: [110, 170], level: 4, color: 0xd62828,
+    name: 'Kişisel Antrenör', icon: '💪', wage: [90, 140], level: 4, color: 0xd62828,
     desc: 'Üyelere koçluk yapar, PT dersi satar. Memnuniyeti ciddi artırır.',
   },
 };
@@ -284,11 +284,11 @@ export const LOANS = [
   { amount: 80000, days: 60, rate: 0.2 },
 ];
 
-export const RENT_PER_TILE = 0.85;
+export const RENT_PER_TILE = 0.6;
 export const ELECTRIC_PRICE = 0.16; // $/kWh
 
 export function xpForLevel(l) {
-  return Math.round(60 + (l - 1) * 55 + Math.pow(l - 1, 2) * 14);
+  return Math.round(45 + (l - 1) * 40 + Math.pow(l - 1, 2) * 10);
 }
 
 // Müşteri hedefleri: plan şablonları

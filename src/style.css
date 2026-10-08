@@ -384,3 +384,20 @@ b.bad, b.good, b.warn { font-weight: 700; }
   .mss { grid-template-columns: 1fr; }
   .logo .l1 { font-size: 40px; } .logo .l2 { font-size: 56px; }
 }
+
+/* ---------- alet istatistikleri ---------- */
+.tab.small { padding: 5px 10px; font-size: 12px; }
+.urow { display: flex; gap: 8px; align-items: center; padding: 6px 4px; border-bottom: 1px dashed var(--line); }
+.urow img { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
+.urank { width: 18px; text-align: center; color: var(--muted); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; }
+.umain { flex: 1; min-width: 0; }
+.utop { display: flex; gap: 6px; align-items: baseline; font-size: 13.5px; }
+.uval { margin-left: auto; font-weight: 900; font-variant-numeric: tabular-nums; }
+.ubar { height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; margin: 4px 0 3px; overflow: hidden; }
+.ubar > div { height: 100%; background: var(--blue); border-radius: 0 4px 4px 0; transition: width .3s; }
+.usub { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.chip.warnc { background: rgba(255, 209, 102, 0.18); color: var(--yellow); }
+.iteml { cursor: pointer; border-radius: 6px; }
+.iteml:hover { background: rgba(255,255,255,0.06); }
+.iteml span:first-child { flex: 1; }
+.iteml b { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }

@@ -345,6 +345,7 @@ function startUse(a, t) {
       }
       if (!tlist.length) {
         issue(a, 'missing', false);
+        G.sim.trackMissing(t.group);
         a.exMissing++;
         a.missingGroups = a.missingGroups || {};
         a.missingGroups[t.group] = 1;
@@ -357,8 +358,8 @@ function startUse(a, t) {
   } else if (t.type === 'buy') {
     const vend = G.sim.itemsOfKind('vending');
     const shop = G.sim.itemsOfKind('shop');
-    if (shop.length && Math.random() < 0.38) candidates = shop;
-    else if (vend.length && Math.random() < 0.3) candidates = vend;
+    if (shop.length && Math.random() < 0.5) candidates = shop;
+    else if (vend.length && Math.random() < 0.45) candidates = vend;
     if (!candidates.length) return nextTask(a);
     dur = 1.2;
   } else {
@@ -439,6 +440,7 @@ function tryClaim(a, t, first) {
     const p = walkableNear(target, 2) || { x: a.pos.x, z: a.pos.z };
     a.waitStart = 0;
     a.waitFor = t;
+    if (t.type === 'exercise') G.sim.trackWait(target.type);
     goTo(a, p.x, p.z, () => {
       a.state = 'wait';
       a.timer = 0;
@@ -931,7 +933,7 @@ function updateTrainer(a, dt, sk) {
       c.coached = true;
       c._coach = null;
       showBubble(c, '😄', 2);
-      const chance = 0.18 + a.data.skill * 0.05;
+      const chance = 0.3 + a.data.skill * 0.06;
       if (Math.random() < chance) {
         G.sim.earn('pt', G.state.prices.pt || 30, c);
         G.sim.progressGoal('pt', 1);

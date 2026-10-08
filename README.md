@@ -20,7 +20,8 @@ Hata ayıklama için adresin sonuna `?debug` eklersen `window.G` üzerinden oyun
 - **Gün döngüsü:** Salon her gün 06:00–23:00 arası açık. Gün sonunda gelir/gider, yeni ve kaybedilen üyeler, şikayetler ve yorumlarla bir rapor gelir.
 - **Müşteriler:** Her müşterinin bir hedefi (kilo vermek, kas yapmak, kondisyon, esneklik, dövüş) ve buna göre bir antrenman planı var. Resepsiyonda giriş yapar, soyunma dolabına uğrar, aletleri sırayla kullanır, susar, tuvalete gider, terler, duş alır, otomattan bir şey alır ve çıkar.
 - **Memnuniyet:** Bekleme süresi, eksik alet, kir, sıcaklık, kalabalık, atmosfer, bozuk aletler, antrenör desteği ve fiyat algısı memnuniyeti belirler. Müşterilerin başındaki baloncuklar o anki sorunu gösterir, sol alttaki panel de günün en büyük şikayetlerini çözüm önerisiyle listeler.
-- **Üyelik ekonomisi:** Günlük ziyaretçiler memnun kalırsa üye olur. Üyelik aylıktır ve 30 günde bir yenilenir; memnuniyetsiz ya da pahalı bulan üye ayrılır. Fiyatı salonun "adil değerine" göre ayarlaman gerekir.
+- **Üyelik ekonomisi:** Günlük ziyaretçiler memnun kalırsa üye olur ve bir kerelik kayıt ücreti öder. Üyelik aylıktır ve 30 günde bir yenilenir; memnuniyetsiz ya da pahalı bulan üye ayrılır. Fiyatı salonun "adil değerine" göre ayarlaman gerekir.
+- **Alet istatistikleri:** İstatistik panelinde aletler bugün / son 7 gün / tüm zamanlar için kullanım sayısına göre sıralanır. Panel; kullanım payını, alet başına kullanımı, kaç müşterinin beklemek zorunda kaldığını ve aranıp bulunamayan alet türlerini gösterir, "bir tane daha al" ya da "az kullanılıyor" uyarısı verir. Kullanım haritası yoğun aletleri salonda kırmızıyla işaretler.
 - **Gerçekçi giderler:** m² başına kira, maaşlar, kullanılan aletlere göre elektrik (kWh), duş ve tuvalet için su, kredi taksitleri.
 - **Isı:** Dış sıcaklık mevsime ve saate göre değişir; içerideki kalabalık salonu ısıtır. Yazın vantilatör veya klima gerekir.
 - **Bakım:** Aletler kullanıldıkça yıpranır ve bozulabilir. Teknisyen tamir eder; istersen ücretli servis de çağırabilirsin. Temizlikçi zemini, duşları ve tuvaletleri temizler.
@@ -35,8 +36,10 @@ Hata ayıklama için adresin sonuna `?debug` eklersen `window.G` üzerinden oyun
 | Yakınlaştır | Fare tekerleği / iki parmak |
 | Kamerayı döndür | Q / E |
 | Yerleştirirken döndür | R |
+| Eşya taşı | M (seçili eşyayı taşır; seçim yoksa tıklanan eşyayı) |
+| Seçili eşyayı sat | Delete |
 | Yerleştirmeyi bitir | Sağ tık / Esc |
-| Duraklat / hız | Boşluk / 1 2 3 |
+| Duraklat / hız (1x, 2x, 5x) | Boşluk / 1 2 3 |
 | İnşa menüsü | B |
 
 ## CrazyGames

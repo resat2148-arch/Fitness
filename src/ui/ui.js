@@ -1,7 +1,7 @@
 import { G, fmtMoney, fmtTime, clamp } from '../game.js';
 import {
   ITEMS, CATEGORIES, STAFF_ROLES, MARKETING, EXPANSIONS, LOANS, ISSUES, EVENTS, MILESTONES, GOALS,
-  xpForLevel, RENT_PER_TILE, MAXD, OPEN_MIN, CLOSE_MIN,
+  xpForLevel, RENT_PER_TILE, MAXD, MAXW, OPEN_MIN, CLOSE_MIN, GROUP_NAMES,
 } from '../data.js';
 import { dateInfo, save, deleteSave } from '../state.js';
 import { makeGhost } from '../render/models.js';
@@ -60,6 +60,8 @@ export class UI {
     this.tutT = 0;
     this.toasts = [];
     this.heatOn = false;
+    this.statTab = 'equip';
+    this.statPeriod = 'week';
     this._bind();
   }
 
@@ -104,7 +106,8 @@ export class UI {
     canvas.addEventListener('pointerup', e => {
       if (G.engine.dragMoved) return;
       if (e.button === 2) {
-        if (this.build) this.endBuild();
+        if (this.movePick) this.endMovePick();
+        else if (this.build) this.endBuild();
         else this.select(null);
         return;
       }
@@ -115,19 +118,21 @@ export class UI {
       if (e.target && e.target.tagName === 'INPUT') return;
       if (!G.running) return;
       if (e.code === 'Escape') {
-        if (this.build) this.endBuild();
+        if (this.movePick) this.endMovePick();
+        else if (this.build) this.endBuild();
         else if (!$('modal-wrap').classList.contains('hidden')) return;
         else if (this.panel) this.closePanel();
         else this.select(null);
       }
       if (e.code === 'KeyR' && this.build) this.rotateBuild();
+      if (e.code === 'KeyM' && $('modal-wrap').classList.contains('hidden')) this.moveKey();
       if (e.code === 'Space') {
         e.preventDefault();
         this.setSpeed(G.speed ? 0 : this.lastSpeed || 1);
       }
       if (e.code === 'Digit1') this.setSpeed(1);
       if (e.code === 'Digit2') this.setSpeed(2);
-      if (e.code === 'Digit3') this.setSpeed(4);
+      if (e.code === 'Digit3') this.setSpeed(5);
       if (e.code === 'KeyB') this.openPanel('build');
       if (e.code === 'Delete' && this.selected && this.selected.item) this.act('sell', {});
     });
@@ -299,7 +304,7 @@ export class UI {
       finance: () => this.panelFinance(),
       expand: () => this.panelExpand(),
       reviews: () => this.panelReviews(),
-      goals: () => this.panelGoals(),
+      stats: () => this.panelStats(),
       settings: () => this.panelSettings(),
     }[this.panel];
     if (!f) return;
@@ -334,9 +339,9 @@ export class UI {
       </div>`;
     }).join('');
     return ['🏗️ İnşa Et', `<div class="tabs">${tabs}</div>
-      <div class="hint">Bir öğe seç ve salona yerleştir. <b>R</b>: döndür · <b>Sağ tık/Esc</b>: iptal · Mavi daireler kullanım noktasıdır.</div>
+      <div class="hint">Bir öğe seç ve salona yerleştir. <b>R</b>: döndür · <b>M</b>: eşya taşı · <b>Sağ tık/Esc</b>: iptal · Mavi daireler kullanım noktasıdır.</div>
       <div class="cards">${cards}</div>
-      <div class="row"><button class="btn small ${this.heatOn ? 'on' : ''}" data-act="heat">✨ Atmosfer haritası ${this.heatOn ? 'açık' : 'kapalı'}</button></div>`];
+      <div class="row"><button class="btn small" data-act="movepick">✋ Eşya taşı (M)</button><button class="btn small ${this.heatOn === 'appeal' ? 'on' : ''}" data-act="heat">✨ Atmosfer haritası ${this.heatOn === 'appeal' ? 'açık' : 'kapalı'}</button></div>`];
   }
 
   panelStaff() {
@@ -391,6 +396,10 @@ export class UI {
       <div class="sect"><h3>PT Dersi (Antrenör)</h3>
         <div class="slider"><input type="range" min="15" max="90" step="1" value="${s.prices.pt || 30}" data-price="pt"><b id="pv-pt"></b></div>
       </div>
+      <div class="sect"><h3>Kayıt Ücreti (yeni üyelerden bir kez)</h3>
+        <div class="slider"><input type="range" min="0" max="100" step="5" value="${s.prices.joinFee ?? 20}" data-price="joinFee"><b id="pv-joinFee"></b></div>
+        <div class="hint">Her yeni üyeden ilk ay ücretine ek olarak alınır. Çok yüksek tutarsan üye olma oranı düşer.</div>
+      </div>
       <div class="sect two">
         <div><h3>Üyeler</h3>
           <div class="kv"><span>Toplam üye</span><b>${members.length}</b></div>
@@ -408,6 +417,7 @@ export class UI {
     set('pv-monthly', fmtMoney(s.prices.monthly) + '/ay');
     set('pv-dayPass', fmtMoney(s.prices.dayPass));
     set('pv-pt', fmtMoney(s.prices.pt || 30));
+    set('pv-joinFee', fmtMoney(s.prices.joinFee ?? 0));
     const fair = G.sim.fairPrice();
     set('fair-price', fmtMoney(fair) + '/ay');
     const r = G.sim.priceRatio();
@@ -556,6 +566,72 @@ export class UI {
       <div class="sect"><h3>Son yorumlar</h3>${list}</div>`];
   }
 
+  panelStats() {
+    const tabs = [['equip', '🏋️ Aletler'], ['general', '🏆 Genel & Başarımlar']]
+      .map(([k, n]) => `<button class="tab ${this.statTab === k ? 'on' : ''}" data-act="stattab" data-tab="${k}">${n}</button>`).join('');
+    const [title, body] = this.statTab === 'general' ? this.panelGoals() : this.panelEquipStats();
+    return [title, `<div class="tabs">${tabs}</div>${body}`];
+  }
+
+  panelEquipStats() {
+    const s = G.state;
+    const period = this.statPeriod;
+    const st = G.sim.usageStats(period);
+    const owned = G.sim.itemsByType;
+    const types = new Set([...owned.keys(), ...Object.keys(st.use), ...Object.keys(st.wait)]);
+    const rows = [...types]
+      .filter(t => ITEMS[t] && ITEMS[t].dur)
+      .map(t => {
+        const n = (owned.get(t) || []).length;
+        const use = st.use[t] || 0;
+        const wait = st.wait[t] || 0;
+        return { t, n, use, wait, per: n ? use / n : 0 };
+      })
+      .sort((a, b) => b.use - a.use || b.wait - a.wait);
+    const maxUse = Math.max(1, ...rows.map(r => r.use));
+    const withUse = rows.filter(r => r.n && r.use);
+    const avgPer = withUse.length ? withUse.reduce((a, r) => a + r.per, 0) / withUse.length : 0;
+    const totalUse = rows.reduce((a, r) => a + r.use, 0);
+    const periods = [['today', 'Bugün'], ['week', 'Son 7 gün'], ['all', 'Tüm zamanlar']]
+      .map(([k, n]) => `<button class="tab small ${period === k ? 'on' : ''}" data-act="statperiod" data-p="${k}">${n}</button>`).join('');
+    const list = rows.length
+      ? rows.map((r, i) => {
+          let chip = '';
+          if (r.n && r.wait >= 3 && r.wait / Math.max(1, r.use) >= 0.2) chip = `<span class="chip warnc" title="Müşteriler bu aleti beklemek zorunda kalıyor">⚠️ Yetersiz — 1 tane daha al</span>`;
+          else if (!r.n && (r.use || r.wait)) chip = `<span class="chip">Artık salonda yok</span>`;
+          else if (r.n && avgPer > 3 && r.per < avgPer * 0.35) chip = `<span class="chip" title="Diğer aletlere göre çok az kullanılıyor">💤 Az kullanılıyor</span>`;
+          const share = totalUse ? Math.round((r.use / totalUse) * 100) : 0;
+          return `<div class="urow" title="${ITEMS[r.t].name}: ${r.use} kullanım (%${share}) · ${r.n} adet · ${r.wait} bekleme">
+            <span class="urank">${i + 1}</span>
+            <img src="${this.thumbs[r.t] || ''}" alt="">
+            <div class="umain">
+              <div class="utop"><b>${ITEMS[r.t].name}</b><span class="muted small">×${r.n}</span><span class="uval">${r.use}</span></div>
+              <div class="ubar"><div style="width:${(r.use / maxUse) * 100}%"></div></div>
+              <div class="usub muted small">%${share} pay · alet başına ${r.n ? r.per.toFixed(1) : '—'} · ⏳ ${r.wait} bekleme ${chip}</div>
+            </div>
+          </div>`;
+        }).join('')
+      : `<div class="empty">Henüz kullanım verisi yok. Zamanı başlat; müşteriler aletleri kullandıkça burada görünecek.</div>`;
+    const miss = Object.entries(st.missing || {}).sort((a, b) => b[1] - a[1]);
+    const missHtml = miss.length
+      ? `<div class="sect"><h3>❓ Aranıp bulunamayanlar <span class="muted">(bugün)</span></h3>${miss.map(([g, n]) => `<div class="kv"><span>${GROUP_NAMES[g] || g}</span><b class="bad">${n} kişi</b></div>`).join('')}
+         <div class="hint">Bu türden hiç alet olmadığı için müşteriler antrenmanlarını yarım bıraktı.</div></div>`
+      : '';
+    const items = G.state.items.filter(it => ITEMS[it.type].dur).sort((a, b) => b.uses - a.uses).slice(0, 8);
+    const itemsHtml = items.length
+      ? items.map(it => `<div class="kv iteml" data-act="focusitem" data-id="${it.id}" title="Salonda göster">
+          <span>${ITEMS[it.type].name} <span class="muted small">#${it.id}</span></span>
+          <span class="small ${it.broken ? 'bad' : it.cond < 40 ? 'warn' : 'muted'}">${it.broken ? 'BOZUK' : Math.round(it.cond) + '%'}</span>
+          <b>${it.uses}</b></div>`).join('')
+      : '<div class="muted">Henüz alet yok.</div>';
+    return ['📈 İstatistikler', `
+      <div class="row" style="margin-top:0">${periods}<button class="btn small ${this.heatOn === 'usage' ? 'on' : ''}" data-act="heatuse" style="margin-left:auto">🔥 Kullanım haritası</button></div>
+      <div class="hint">Toplam <b>${totalUse}</b> egzersiz. Çok bekleme olan aletten bir tane daha almak memnuniyeti artırır; az kullanılanı satıp yerine popüler olanı koyabilirsin.</div>
+      <div class="sect"><h3>En çok kullanılan aletler</h3>${list}</div>
+      ${missHtml}
+      <div class="sect"><h3>Tek tek en yoğun aletler <span class="muted">(tüm zamanlar)</span></h3>${itemsHtml}</div>`];
+  }
+
   panelGoals() {
     const s = G.state;
     const ms = MILESTONES.map(m => `<div class="ms ${s.milestones[m.id] ? 'done' : ''}"><span>${s.milestones[m.id] ? '🏅' : '⬜'}</span><div>${m.text}<div class="muted small">Ödül: ${fmtMoney(m.reward)}${s.milestones[m.id] ? ` · Gün ${s.milestones[m.id]}'de kazanıldı` : ''}</div></div></div>`).join('');
@@ -587,6 +663,8 @@ export class UI {
         <div class="kv"><span>Yakınlaştır</span><b>Fare tekerleği / iki parmak</b></div>
         <div class="kv"><span>Kamerayı döndür</span><b>Q / E</b></div>
         <div class="kv"><span>Yerleştirirken döndür</span><b>R</b></div>
+        <div class="kv"><span>Eşya taşı (seçiliyken ya da tıklayarak seç)</span><b>M</b></div>
+        <div class="kv"><span>Seçili eşyayı sat</span><b>Delete</b></div>
         <div class="kv"><span>Duraklat / Hız</span><b>Boşluk / 1 2 3</b></div>
         <div class="kv"><span>İnşa menüsü</span><b>B</b></div>
       </div>
@@ -600,6 +678,14 @@ export class UI {
       case 'close': this.closePanel(); break;
       case 'cat': this.buildCat = d.cat; this.renderPanel(); G.audio.play('click'); break;
       case 'stab': this.staffTab = d.role; this.renderPanel(); G.audio.play('click'); break;
+      case 'stattab': this.statTab = d.tab; this.renderPanel(); G.audio.play('click'); break;
+      case 'statperiod': this.statPeriod = d.p; this.renderPanel(); G.audio.play('click'); break;
+      case 'heatuse': this.toggleHeat(this.heatOn === 'usage' ? false : 'usage'); this.renderPanel(); break;
+      case 'focusitem': {
+        const it = s.items.find(x => x.id === +d.id);
+        if (it) this.selectItem(it);
+        break;
+      }
       case 'buy':
         if (+d.price > s.money) {
           this.notify('Yeterli paran yok!', 'bad');
@@ -608,7 +694,7 @@ export class UI {
         }
         this.startBuild(d.type);
         break;
-      case 'heat': this.toggleHeat(!this.heatOn); this.renderPanel(); break;
+      case 'heat': this.toggleHeat(this.heatOn === 'appeal' ? false : 'appeal'); this.renderPanel(); break;
       case 'hire': {
         const c = s.candidates[this.staffTab].find(x => x.id === +d.id);
         if (c) G.sim.hire(c);
@@ -640,6 +726,7 @@ export class UI {
         break;
       // bilgi paneli
       case 'move': if (this.selected && this.selected.item) this.startMove(this.selected.item); break;
+      case 'movepick': this.moveKey(); break;
       case 'sell': {
         const it = this.selected && this.selected.item;
         if (!it) return;
@@ -670,6 +757,7 @@ export class UI {
       }
       case 'deselect': this.select(null); break;
       case 'endbuild': this.endBuild(); break;
+      case 'endmovepick': this.endMovePick(); break;
       case 'rotate': this.rotateBuild(); break;
       case 'skiptut':
         s.tutorial = -1;
@@ -691,12 +779,26 @@ export class UI {
     }
   }
 
-  toggleHeat(on) {
-    this.heatOn = on;
-    if (on) {
+  // mode: false | 'appeal' (atmosfer) | 'usage' (alet kullanım yoğunluğu)
+  toggleHeat(mode) {
+    this.heatOn = mode;
+    if (mode === 'appeal') {
       const vals = new Float32Array(G.sim.appeal.length);
       for (let k = 0; k < vals.length; k++) vals[k] = G.sim.appeal[k] / 22;
       G.world.showHeat(vals, G.sim.grid.inside);
+    } else if (mode === 'usage') {
+      // yoğun kullanılan = kırmızı, az kullanılan = yeşil; sadece aletlerin kapladığı karolar
+      const vals = new Float32Array(G.sim.appeal.length);
+      const mask = new Uint8Array(vals.length);
+      const eq = G.state.items.filter(it => ITEMS[it.type].dur);
+      const maxU = Math.max(1, ...eq.map(it => it.uses));
+      for (const it of eq)
+        for (const c of G.sim.cells(it.type, it.i, it.j, it.rot)) {
+          const k = c.j * MAXW + c.i;
+          vals[k] = 1 - it.uses / maxU;
+          mask[k] = 1;
+        }
+      G.world.showHeat(vals, mask);
     } else G.world.showHeat(null);
   }
 
@@ -793,7 +895,47 @@ export class UI {
     }
   }
 
+  // M tuşu: seçili eşyayı taşı; seçili eşya yoksa "taşınacak eşyayı seç" moduna gir
+  moveKey() {
+    if (this.build && this.build.move) return;
+    if (this.movePick) return this.endMovePick();
+    if (this.selected && this.selected.item) return this.startMove(this.selected.item);
+    if (this.build) this.endBuild();
+    this.select(null);
+    this.movePick = true;
+    $('panel').classList.add('hidden');
+    $('buildbar').innerHTML = `<div style="font-size:26px">✋</div><div><b>Taşıma modu</b><div class="small muted">Taşımak istediğin eşyaya tıkla · Esc: iptal</div></div>
+      <button class="btn small red" data-act="endmovepick">✕ İptal</button>`;
+    $('buildbar').classList.remove('hidden');
+    G.audio.play('click');
+  }
+
+  endMovePick() {
+    this.movePick = false;
+    $('buildbar').classList.add('hidden');
+    if (this.panel) $('panel').classList.remove('hidden');
+  }
+
+  pickItemAt(sx, sy) {
+    for (const h of G.engine.pick(sx, sy, [G.world.itemGroup])) {
+      const id = h.object.userData.itemId;
+      const it = id && G.state.items.find(x => x.id === id);
+      if (it) return it;
+    }
+    return null;
+  }
+
   handleClick(sx, sy, pointerType) {
+    if (this.movePick) {
+      const it = this.pickItemAt(sx, sy);
+      if (!it) {
+        G.audio.play('error');
+        return;
+      }
+      this.movePick = false;
+      this.startMove(it);
+      return;
+    }
     if (this.build) {
       const b = this.build;
       const p = G.engine.screenToGround(sx, sy);
@@ -817,6 +959,7 @@ export class UI {
           G.world.root.remove(b.ghost);
           G.world.showFootprint(null);
           $('buildbar').classList.add('hidden');
+          if (this.panel) $('panel').classList.remove('hidden');
           this.select({ item: it });
         }
         return;
@@ -892,9 +1035,9 @@ export class UI {
       if (d.cooling) html += `<div class="kv"><span>Soğutma</span><b>${d.cooling}°C / 80 m²</b></div>`;
       if (d.power) html += `<div class="kv"><span>Güç</span><b>${d.power} kW</b></div>`;
       html += `<div class="row">
-        <button class="btn small" data-act="move">✋ Taşı</button>
+        <button class="btn small" data-act="move" title="Kısayol: M">✋ Taşı (M)</button>
         ${d.wear && (it.broken || it.cond < 70) ? `<button class="btn small green" data-act="repair">🔧 Servis (${fmtMoney(G.sim.repairCost(it))})</button>` : ''}
-        <button class="btn small red" data-act="sell">💰 Sat (+${fmtMoney(G.sim.sellValue(it))})</button></div>`;
+        <button class="btn small red" data-act="sell" title="Kısayol: Delete">💰 Sat (+${fmtMoney(G.sim.sellValue(it))})</button></div>`;
     } else if (sel.agent) {
       const a = sel.agent;
       if (a.gone || !a.ch) return this.select(null);

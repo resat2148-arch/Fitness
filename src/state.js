@@ -72,7 +72,7 @@ export function newState(gymName) {
   const s = {
     v: SAVE_VERSION,
     gymName: gymName || 'FitZone',
-    money: 18000,
+    money: 25000,
     day: 1,
     minute: 6 * 60,
     phase: 'open',
@@ -84,7 +84,7 @@ export function newState(gymName) {
     staff: [],
     members: [],
     nextId: 1,
-    prices: { monthly: 35, dayPass: 10 },
+    prices: { monthly: 35, dayPass: 12, joinFee: 20, pt: 30 },
     marketing: [],
     loan: null,
     history: [],
@@ -95,7 +95,7 @@ export function newState(gymName) {
     tutorial: 0,
     events: [],
     candidates: {},
-    stats: { visits: 0, income: 0, maxMembers: 0, newMembers: 0 },
+    stats: { visits: 0, income: 0, maxMembers: 0, newMembers: 0, use: {}, wait: {} },
     negDays: 0,
     seenLevel: 1,
     settings: { music: true, sfx: true },
@@ -154,6 +154,11 @@ export function loadSave() {
   try {
     const s = JSON.parse(json);
     if (!s || s.v !== SAVE_VERSION) return null;
+    // eski kayıtları yeni alanlarla tamamla
+    s.prices.joinFee ??= 20;
+    s.prices.pt ??= 30;
+    s.stats.use ??= {};
+    s.stats.wait ??= {};
     return s;
   } catch (e) {
     return null;
